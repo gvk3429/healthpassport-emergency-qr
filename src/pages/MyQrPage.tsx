@@ -45,7 +45,6 @@ function errorMessage(
 
 export default function MyQrPage() {
   const { user } = useAuth();
-
   const uid = user?.uid;
 
   const qrContainerRef =
@@ -83,12 +82,16 @@ export default function MyQrPage() {
   }, [uid]);
 
   useEffect(() => {
-    if (!uid) return;
+    if (!uid) {
+      setLoading(false);
+      return;
+    }
 
-let cancelled = false;
+    let cancelled = false;
 
     async function initialLoad() {
       setLoading(true);
+      setError("");
 
       try {
         const [savedProfile, savedQr] =
@@ -128,6 +131,8 @@ let cancelled = false;
     action: () => Promise<unknown>,
     successMessage: string
   ) {
+    if (busy) return;
+
     setBusy(true);
     setError("");
     setMessage("");
@@ -149,7 +154,7 @@ let cancelled = false;
   }
 
   function handleCreate() {
-    if (!uid || !profile) return;
+    if (!uid || !profile || busy) return;
 
     void performAction(
       () => createPersonalEmergencyQr(uid),
@@ -158,7 +163,7 @@ let cancelled = false;
   }
 
   function handleActivate() {
-    if (!qr || !profile) return;
+    if (!qr || !profile || busy) return;
 
     if (!profile.consentGiven) {
       setError(
@@ -174,17 +179,21 @@ let cancelled = false;
   }
 
   function handleDeactivate() {
-    if (!qr || qr.status !== "ACTIVE") {
-      return;
-    }
-
     if (
-      !window.confirm(
-        "Deactivate this QR? Its public emergency information will become unavailable."
-      )
+      !qr ||
+      qr.status !== "ACTIVE" ||
+      busy
     ) {
       return;
     }
+
+    const confirmed = window.confirm(
+      "Deactivate this QR?\n\n" +
+      "Its public emergency information will " +
+      "become unavailable until you reactivate it."
+    );
+
+    if (!confirmed) return;
 
     void performAction(
       deactivateEmergencyQr,
@@ -192,56 +201,103 @@ let cancelled = false;
     );
   }
 
-  function handleDeleteDraft() {
-    if (
-      !uid ||
-      !qr ||
-      qr.status !== "DRAFT"
-    ) {
+  function handleDelete() {
+    if (!uid || !qr || busy) return;
+
+    if (qr.status === "ACTIVE") {
+      setError(
+        "Deactivate your QR before deleting it."
+      );
       return;
     }
 
-    if (
-      !window.confirm(
-        "Permanently delete this draft QR?"
-      )
-    ) {
+    if (qr.status === "DRAFT") {
+      const confirmed = window.confirm(
+        "Permanently delete this draft QR?\n\n" +
+        "This action cannot be undone."
+      );
+
+      if (!confirmed) return;
+
+      void performAction(
+        () => deletePersonalEmergencyQr(uid),
+        "Your draft QR has been deleted."
+      );
+
       return;
     }
 
-    void performAction(
-      () => deletePersonalEmergencyQr(uid),
-      "Your draft QR has been deleted."
-    );
+    if (qr.status === "INACTIVE") {
+      const confirmed = window.confirm(
+        "PERMANENTLY DELETE THIS QR?\n\n" +
+        "Your current QR identifier will be retired " +
+        "and can never be reactivated.\n\n" +
+        "Any previously printed cards, wristbands " +
+        "or stickers containing this QR will stop " +
+        "working permanently.\n\n" +
+        "If you create another QR, it will have " +
+        "a completely different identifier.\n\n" +
+        "Continue?"
+      );
+
+      if (!confirmed) return;
+
+      // A second confirmation reduces the risk
+      // of accidentally retiring a printed QR.
+      const finalConfirmation = window.confirm(
+        "Final confirmation:\n\n" +
+        "Delete this inactive QR permanently?"
+      );
+
+      if (!finalConfirmation) return;
+
+      void performAction(
+        () => deletePersonalEmergencyQr(uid),
+        "Your QR has been permanently deleted. " +
+        "Its identifier has been retired and " +
+        "cannot be reused."
+      );
+    }
   }
 
   const qrUrl = qr
-  ? `${window.location.origin}${import.meta.env.BASE_URL}#/e/${encodeURIComponent(
-      qr.id
-    )}`
-  : "";
+    ? `${window.location.origin}${
+        import.meta.env.BASE_URL
+      }#/e/${encodeURIComponent(qr.id)}`
+    : "";
 
   function handleDownload() {
+    if (!qr || busy) return;
+
     const canvas =
       qrContainerRef.current?.querySelector(
         "canvas"
       );
 
-    if (!canvas || !qr) {
+    if (!canvas) {
       setError("QR image is unavailable.");
       return;
     }
 
-    const anchor =
-      document.createElement("a");
+    try {
+      const anchor =
+        document.createElement("a");
 
-    anchor.download =
-      "healthpassport-emergency-qr.png";
+      anchor.download =
+        "healthpassport-emergency-qr.png";
 
-    anchor.href =
-      canvas.toDataURL("image/png");
+      anchor.href =
+        canvas.toDataURL("image/png");
 
-    anchor.click();
+      anchor.click();
+    } catch (err) {
+      setError(
+        errorMessage(
+          err,
+          "Unable to download your QR."
+        )
+      );
+    }
   }
 
   if (loading) {
@@ -259,7 +315,7 @@ let cancelled = false;
           to="/dashboard"
           className="text-sm font-medium text-blue-700"
         >
-          â† Back to Dashboard
+          ← Back to Dashboard
         </Link>
 
         <header className="mb-8 mt-6">
@@ -311,6 +367,8 @@ let cancelled = false;
           </section>
         ) : (
           <div className="grid gap-6 lg:grid-cols-2">
+            {/* EMERGENCY PROFILE */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
               <h2 className="text-xl font-bold">
                 Emergency profile
@@ -364,6 +422,8 @@ let cancelled = false;
               </Link>
             </section>
 
+            {/* PERSONAL QR */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
               <h2 className="text-xl font-bold">
                 Personal QR
@@ -394,7 +454,9 @@ let cancelled = false;
                       className={
                         qr.status === "ACTIVE"
                           ? "rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-800"
-                          : "rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800"
+                          : qr.status === "INACTIVE"
+                            ? "rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800"
+                            : "rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-800"
                       }
                     >
                       {qr.status}
@@ -462,14 +524,44 @@ let cancelled = false;
                       </button>
 
                       {qr.status === "DRAFT" && (
-                        <button
-                          type="button"
-                          onClick={handleDeleteDraft}
-                          disabled={busy}
-                          className="ml-3 mt-5 rounded-lg border border-red-300 px-5 py-3 font-semibold text-red-700 disabled:opacity-50"
-                        >
-                          Delete Draft
-                        </button>
+                        <div className="mt-5 border-t pt-5">
+                          <button
+                            type="button"
+                            onClick={handleDelete}
+                            disabled={busy}
+                            className="rounded-lg border border-red-300 px-5 py-3 font-semibold text-red-700 disabled:opacity-50"
+                          >
+                            Delete Draft
+                          </button>
+                        </div>
+                      )}
+
+                      {qr.status === "INACTIVE" && (
+                        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-5">
+                          <h3 className="font-bold text-red-900">
+                            Permanently delete QR
+                          </h3>
+
+                          <p className="mt-2 text-sm text-red-800">
+                            Deleting this QR permanently
+                            retires its identifier.
+                            Previously printed copies
+                            will never work again.
+                            You can create a new QR
+                            afterward.
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={handleDelete}
+                            disabled={busy}
+                            className="mt-4 rounded-lg bg-red-700 px-5 py-3 font-semibold text-white disabled:opacity-50"
+                          >
+                            {busy
+                              ? "Processing..."
+                              : "Delete QR Permanently"}
+                          </button>
+                        </div>
                       )}
                     </>
                   ) : (
@@ -491,6 +583,11 @@ let cancelled = false;
                           ? "Processing..."
                           : "Deactivate QR"}
                       </button>
+
+                      <p className="mt-3 text-sm text-slate-500">
+                        To permanently delete this
+                        QR, deactivate it first.
+                      </p>
                     </>
                   )}
                 </>
