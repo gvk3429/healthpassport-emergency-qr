@@ -1,0 +1,244 @@
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}
+
+:root {
+  font-family: "Inter", ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+
+  color: #142d50;
+  background-color: #f7f9fd;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background-color: #f7f9fd;
+  font-family: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+a {
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 3px solid #185abc;
+  outline-offset: 3px;
+}
+
+/*
+ * HealthPassport design system
+ *
+ * Dark surfaces: white text.
+ * White and pale surfaces: dark text.
+ */
+
+.hp-btn-primary {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #185abc;
+  border-radius: 12px;
+  background-color: #185abc;
+  padding: 12px 22px;
+  color: #ffffff !important;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.hp-btn-primary:hover {
+  border-color: #124a9e;
+  background-color: #124a9e;
+  color: #ffffff !important;
+}
+
+.hp-btn-secondary {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background-color: #ffffff;
+  padding: 12px 22px;
+  color: #142d50 !important;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.hp-btn-secondary:hover {
+  background-color: #f1f5f9;
+  color: #142d50 !important;
+}
+
+.hp-btn-success {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #087443;
+  border-radius: 12px;
+  background-color: #087443;
+  padding: 12px 22px;
+  color: #ffffff !important;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.hp-btn-success:hover {
+  background-color: #065f38;
+  color: #ffffff !important;
+}
+
+.hp-btn-danger {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #c81e35;
+  border-radius: 12px;
+  background-color: #c81e35;
+  padding: 12px 22px;
+  color: #ffffff !important;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.hp-btn-danger:hover {
+  background-color: #a7172b;
+  color: #ffffff !important;
+}
+
+.hp-btn-primary:disabled,
+.hp-btn-secondary:disabled,
+.hp-btn-success:disabled,
+.hp-btn-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hp-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background-color: #ffffff;
+  box-shadow: 0 4px 16px rgb(20 45 80 / 4%);
+}
+
+.hp-input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background-color: #ffffff;
+  padding: 13px 15px;
+  color: #142d50;
+  font-size: 14px;
+}
+
+.hp-input:focus {
+  border-color: #185abc;
+  outline: 3px solid #dbeafe;
+  outline-offset: 0;
+}
+
+.hp-alert-success {
+  border: 1px solid #bbf7d0;
+  border-radius: 16px;
+  background-color: #f0fdf4;
+  padding: 20px;
+  color: #14532d;
+}
+
+.hp-alert-error {
+  border: 1px solid #fecaca;
+  border-radius: 16px;
+  background-color: #fef2f2;
+  padding: 20px;
+  color: #991b1b;
+}
+
+.hp-alert-info {
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
+  background-color: #eff6ff;
+  padding: 20px;
+  color: #1e3a5f;
+}
+
+/*
+ * Enforce readable text on existing saturated buttons
+ * throughout the application, including legacy Tailwind
+ * utility combinations.
+ */
+
+a[class*="bg-blue-7"],
+a[class*="bg-blue-6"],
+a[class*="bg-green-7"],
+a[class*="bg-green-6"],
+a[class*="bg-red-7"],
+button[class*="bg-blue-7"],
+button[class*="bg-blue-6"],
+button[class*="bg-green-7"],
+button[class*="bg-green-6"],
+button[class*="bg-red-7"] {
+  color: #ffffff !important;
+}
+
+a[class*="bg-[#185abc]"],
+button[class*="bg-[#185abc]"] {
+  color: #ffffff !important;
+}
+
+::selection {
+  background-color: #dbeafe;
+  color: #142d50;
+}
+
+#root {
+  min-height: 100vh;
+}

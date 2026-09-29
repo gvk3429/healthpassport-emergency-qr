@@ -1,0 +1,11 @@
+@'
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+'@ | Set-Content -Path "D:\Projects\healthpassport-emergency-qr\storage.rules" -Encoding utf8

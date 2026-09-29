@@ -1,0 +1,417 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =====================================================
+    // 1. AUTHENTICATION
+    // =====================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verified() {
+      return signedIn()
+        && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(ownerId) {
+      return verified()
+        && request.auth.uid == ownerId;
+    }
+
+    // =====================================================
+    // 2. TIMESTAMP VALIDATION
+    // =====================================================
+
+    function isoDate(value) {
+      return value is string
+        && value.matches(
+          '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$'
+        );
+    }
+
+    // =====================================================
+    // 3. PRIVACY VALIDATION
+    // =====================================================
+
+    function validPrivacy(privacy) {
+      return privacy is map
+
+        && privacy.keys().hasAll([
+          'showPhoto',
+          'showDateOfBirth',
+          'showBloodGroup',
+          'showAllergies',
+          'showMedicalConditions',
+          'showMedications',
+          'showEmergencyContacts',
+          'showEmergencyInstructions'
+        ])
+
+        && privacy.keys().hasOnly([
+          'showPhoto',
+          'showDateOfBirth',
+          'showBloodGroup',
+          'showAllergies',
+          'showMedicalConditions',
+          'showMedications',
+          'showEmergencyContacts',
+          'showEmergencyInstructions'
+        ])
+
+        && privacy.showPhoto is bool
+        && privacy.showDateOfBirth is bool
+        && privacy.showBloodGroup is bool
+        && privacy.showAllergies is bool
+        && privacy.showMedicalConditions is bool
+        && privacy.showMedications is bool
+        && privacy.showEmergencyContacts is bool
+        && privacy.showEmergencyInstructions is bool;
+    }
+
+    // =====================================================
+    // 4. EMERGENCY PROFILE VALIDATION
+    // =====================================================
+
+    function validProfile(ownerId) {
+      let data = request.resource.data;
+
+      return data.keys().hasAll([
+          'ownerId',
+          'fullName',
+          'photoUrl',
+          'dateOfBirth',
+          'bloodGroup',
+          'allergies',
+          'medicalConditions',
+          'medications',
+          'emergencyContacts',
+          'emergencyInstructions',
+          'privacy',
+          'consentGiven',
+          'consentUpdatedAt',
+          'createdAt',
+          'updatedAt'
+        ])
+
+        && data.keys().hasOnly([
+          'ownerId',
+          'fullName',
+          'photoUrl',
+          'dateOfBirth',
+          'bloodGroup',
+          'allergies',
+          'medicalConditions',
+          'medications',
+          'emergencyContacts',
+          'emergencyInstructions',
+          'privacy',
+          'consentGiven',
+          'consentUpdatedAt',
+          'createdAt',
+          'updatedAt'
+        ])
+
+        && data.ownerId == ownerId
+
+        && data.fullName is string
+        && data.fullName.size() > 0
+        && data.fullName.size() <= 120
+
+        && data.photoUrl is string
+        && data.photoUrl.size() <= 2048
+
+        && data.dateOfBirth is string
+        && data.dateOfBirth.size() <= 10
+
+        && data.bloodGroup in [
+          'Unknown',
+          'A+', 'A-',
+          'B+', 'B-',
+          'AB+', 'AB-',
+          'O+', 'O-'
+        ]
+
+        && data.allergies is list
+        && data.allergies.size() <= 30
+
+        && data.medicalConditions is list
+        && data.medicalConditions.size() <= 30
+
+        && data.medications is list
+        && data.medications.size() <= 30
+
+        && data.emergencyContacts is list
+        && data.emergencyContacts.size() >= 1
+        && data.emergencyContacts.size() <= 10
+
+        && data.emergencyInstructions is string
+        && data.emergencyInstructions.size() <= 2000
+
+        && validPrivacy(data.privacy)
+
+        && data.consentGiven is bool
+
+        && isoDate(data.consentUpdatedAt)
+        && isoDate(data.createdAt)
+        && isoDate(data.updatedAt);
+    }
+
+    // =====================================================
+    // 5. PRIVATE EMERGENCY PROFILES
+    // =====================================================
+
+    match /emergencyProfiles/{ownerId} {
+
+      // Only the verified account owner can read
+      // their private emergency profile.
+
+      allow get: if isOwner(ownerId);
+
+      allow list: if false;
+
+      // Creating a profile requires explicit consent.
+
+      allow create: if isOwner(ownerId)
+        && validProfile(ownerId)
+        && request.resource.data.consentGiven == true;
+
+      // Preserve the original creation timestamp.
+      // Require a newer update timestamp.
+      // Changes to consent must also update its timestamp.
+
+      allow update: if isOwner(ownerId)
+
+        && resource.data.ownerId == ownerId
+
+        && validProfile(ownerId)
+
+        && request.resource.data.createdAt
+          == resource.data.createdAt
+
+        && request.resource.data.updatedAt
+          > resource.data.updatedAt
+
+        && (
+          request.resource.data.consentGiven
+            == resource.data.consentGiven
+
+          ||
+
+          request.resource.data.consentUpdatedAt
+            != resource.data.consentUpdatedAt
+        );
+
+      allow delete: if isOwner(ownerId);
+    }
+
+    // =====================================================
+    // 6. DRAFT QR VALIDATION
+    // =====================================================
+
+    function validDraftQr(ownerId) {
+      let data = request.resource.data;
+
+      return data.keys().hasAll([
+          'id',
+          'ownerId',
+          'profileId',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'activatedAt',
+          'deactivatedAt'
+        ])
+
+        && data.keys().hasOnly([
+          'id',
+          'ownerId',
+          'profileId',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'activatedAt',
+          'deactivatedAt'
+        ])
+
+        && data.id is string
+
+        && data.id.matches(
+          '^[A-Za-z0-9_-]{20,100}$'
+        )
+
+        && data.ownerId == ownerId
+        && data.profileId == ownerId
+
+        && data.status == 'DRAFT'
+
+        && isoDate(data.createdAt)
+        && isoDate(data.updatedAt)
+
+        && data.activatedAt == null
+        && data.deactivatedAt == null;
+    }
+
+    // =====================================================
+    // 7. PERSONAL EMERGENCY QR
+    // =====================================================
+
+    match /personalEmergencyQrs/{ownerId} {
+
+      allow get: if isOwner(ownerId);
+
+      allow list: if false;
+
+      // The verified owner can create a draft QR
+      // only after creating an emergency profile.
+
+      allow create: if isOwner(ownerId)
+
+        && validDraftQr(ownerId)
+
+        && exists(
+          /databases/$(database)/documents/emergencyProfiles/$(ownerId)
+        );
+
+      // Activation and deactivation must be performed
+      // by trusted backend Cloud Functions.
+
+      allow update: if false;
+
+      // An owner may delete only an unactivated draft.
+
+      allow delete: if isOwner(ownerId)
+        && resource.data.status == 'DRAFT';
+    }
+
+    // =====================================================
+    // 8. PUBLIC QR AUTHORIZATION
+    // =====================================================
+
+    function currentPublicQr(qrId) {
+
+      // The public projection must be active,
+      // identify its owner and match the requested QR.
+
+      return resource.data.ownerId is string
+
+        && resource.data.status == 'ACTIVE'
+
+        && resource.data.qrId == qrId
+
+        // ---------------------------------------------
+        // Supporting documents must all exist.
+        // ---------------------------------------------
+
+        && exists(
+          /databases/$(database)/documents/emergencyProfiles/$(resource.data.ownerId)
+        )
+
+        && exists(
+          /databases/$(database)/documents/personalEmergencyQrs/$(resource.data.ownerId)
+        )
+
+        && exists(
+          /databases/$(database)/documents/emergencyQrRegistry/$(qrId)
+        )
+
+        // ---------------------------------------------
+        // Private profile ownership and consent.
+        // ---------------------------------------------
+
+        && get(
+          /databases/$(database)/documents/emergencyProfiles/$(resource.data.ownerId)
+        ).data.ownerId == resource.data.ownerId
+
+        && get(
+          /databases/$(database)/documents/emergencyProfiles/$(resource.data.ownerId)
+        ).data.consentGiven == true
+
+        // A stale public projection cannot be read.
+
+        && get(
+          /databases/$(database)/documents/emergencyProfiles/$(resource.data.ownerId)
+        ).data.updatedAt == resource.data.sourceUpdatedAt
+
+        // ---------------------------------------------
+        // Personal QR ownership and active status.
+        // ---------------------------------------------
+
+        && get(
+          /databases/$(database)/documents/personalEmergencyQrs/$(resource.data.ownerId)
+        ).data.ownerId == resource.data.ownerId
+
+        && get(
+          /databases/$(database)/documents/personalEmergencyQrs/$(resource.data.ownerId)
+        ).data.profileId == resource.data.ownerId
+
+        && get(
+          /databases/$(database)/documents/personalEmergencyQrs/$(resource.data.ownerId)
+        ).data.id == qrId
+
+        && get(
+          /databases/$(database)/documents/personalEmergencyQrs/$(resource.data.ownerId)
+        ).data.status == 'ACTIVE'
+
+        // ---------------------------------------------
+        // Permanent QR ownership registry.
+        // ---------------------------------------------
+
+        && get(
+          /databases/$(database)/documents/emergencyQrRegistry/$(qrId)
+        ).data.ownerId == resource.data.ownerId
+
+        && get(
+          /databases/$(database)/documents/emergencyQrRegistry/$(qrId)
+        ).data.profileId == resource.data.ownerId
+
+        && get(
+          /databases/$(database)/documents/emergencyQrRegistry/$(qrId)
+        ).data.qrId == qrId;
+    }
+
+    // =====================================================
+    // 9. PUBLIC EMERGENCY QR
+    // =====================================================
+
+    match /publicEmergencyQrs/{qrId} {
+
+      // Anonymous scanners can retrieve a QR only
+      // when every authorization condition is met.
+
+      allow get: if currentPublicQr(qrId);
+
+      // Public QR enumeration is prohibited.
+
+      allow list: if false;
+
+      // Only trusted backend functions using the
+      // Admin SDK can publish or remove public QRs.
+
+      allow create, update, delete: if false;
+    }
+
+    // =====================================================
+    // 10. PERMANENT QR OWNERSHIP REGISTRY
+    // =====================================================
+
+    match /emergencyQrRegistry/{qrId} {
+
+      // The ownership registry is backend-only.
+      // Clients cannot read, modify or delete it.
+
+      allow read, write: if false;
+    }
+
+    // =====================================================
+    // 11. DEFAULT DENY
+    // =====================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
