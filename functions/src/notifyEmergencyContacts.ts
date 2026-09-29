@@ -2,16 +2,19 @@
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import nodemailer from "nodemailer";
+import nodemailer, {
+  type Transporter,
+} from "nodemailer";
 
 const db = getFirestore();
 
 const emailUser = defineSecret("HP_EMAIL_USER");
 const emailPassword = defineSecret("HP_EMAIL_APP_PASSWORD");
 
-const COOLDOWN_MS = 15 * 60 * 1000;
 const QR_PATTERN = /^[A-Za-z0-9_-]{20,100}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const COOLDOWN_MS = 15 * 60 * 1000;
+const SMTP_TIMEOUT_MS = 12_000;
 
 type RequestData = {
   qrId?: unknown;
@@ -21,22 +24,61 @@ type RequestData = {
   message?: unknown;
 };
 
+type Location = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+};
+
 type Contact = {
-  name?: unknown;
   email?: unknown;
 };
 
-function validCoordinate(
-  value: unknown,
-  min: number,
-  max: number
-): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= min &&
-    value <= max
-  );
+function parseLocation(data: RequestData): Location | null {
+  const fields = [
+    data.latitude,
+    data.longitude,
+    data.accuracy,
+  ];
+
+  const supplied = fields.filter(
+    (value) => value !== undefined
+  ).length;
+
+  if (supplied === 0) {
+    return null;
+  }
+
+  if (supplied !== 3) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Provide all GPS fields or omit all GPS fields."
+    );
+  }
+
+  const { latitude, longitude, accuracy } = data;
+
+  if (
+    typeof latitude !== "number" ||
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    typeof longitude !== "number" ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180 ||
+    typeof accuracy !== "number" ||
+    !Number.isFinite(accuracy) ||
+    accuracy < 0 ||
+    accuracy > 100000
+  ) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Invalid GPS data."
+    );
+  }
+
+  return { latitude, longitude, accuracy };
 }
 
 function validEmail(value: unknown): value is string {
@@ -51,12 +93,68 @@ function cleanLine(value: string): string {
   return value.replace(/[\r\n\t]+/g, " ").trim();
 }
 
+function emailBody(
+  patientName: string,
+  location: Location | null,
+  scannerMessage: string
+): string {
+  const lines = [
+    "HEALTHPASSPORT EMERGENCY ALERT",
+    "",
+    `Emergency profile: ${patientName}`,
+    "",
+    "Someone has scanned this person's emergency QR and requested assistance.",
+    "",
+  ];
+
+  if (location) {
+    const coordinates =
+      `${location.latitude},${location.longitude}`;
+
+    lines.push(
+      "SCANNER-REPORTED LOCATION",
+      `Latitude: ${location.latitude}`,
+      `Longitude: ${location.longitude}`,
+      `Reported accuracy: ${location.accuracy} metres`,
+      "",
+      `Google Maps: https://www.google.com/maps?q=${coordinates}`,
+      `Apple Maps: https://maps.apple.com/?ll=${coordinates}`,
+      "",
+      "This location has not been independently verified.",
+      ""
+    );
+  } else {
+    lines.push(
+      "LOCATION UNAVAILABLE",
+      "The scanner did not provide GPS coordinates.",
+      "Contact the scanner or emergency services for location information.",
+      ""
+    );
+  }
+
+  if (scannerMessage) {
+    lines.push(
+      "SCANNER MESSAGE",
+      scannerMessage,
+      ""
+    );
+  }
+
+  lines.push(
+    "If this is an emergency, contact emergency services immediately.",
+    "",
+    "This is an automated HealthPassport notification."
+  );
+
+  return lines.join("\n");
+}
+
 export const notifyEmergencyContacts = onCall(
   {
     region: "asia-south1",
     secrets: [emailUser, emailPassword],
     maxInstances: 5,
-    timeoutSeconds: 60,
+    timeoutSeconds: 120,
   },
   async (request) => {
     const data = (request.data ?? {}) as RequestData;
@@ -71,62 +169,48 @@ export const notifyEmergencyContacts = onCall(
       );
     }
 
-    if (
-      !validCoordinate(data.latitude, -90, 90) ||
-      !validCoordinate(data.longitude, -180, 180)
-    ) {
-      throw new HttpsError(
-        "invalid-argument",
-        "Valid GPS coordinates are required."
-      );
-    }
-
-    if (
-      typeof data.accuracy !== "number" ||
-      !Number.isFinite(data.accuracy) ||
-      data.accuracy < 0 ||
-      data.accuracy > 100000
-    ) {
-      throw new HttpsError(
-        "invalid-argument",
-        "Invalid GPS accuracy."
-      );
-    }
+    const qrId = data.qrId;
+    const location = parseLocation(data);
 
     if (
       data.message !== undefined &&
-      (
-        typeof data.message !== "string" ||
-        data.message.length > 500
-      )
+      typeof data.message !== "string"
     ) {
       throw new HttpsError(
         "invalid-argument",
-        "The message must be 500 characters or fewer."
+        "Invalid emergency message."
       );
     }
 
-    const qrId = data.qrId;
-    const latitude = data.latitude;
-    const longitude = data.longitude;
-    const accuracy = Math.round(data.accuracy);
     const message =
       typeof data.message === "string"
-        ? data.message.trim()
+        ? cleanLine(data.message)
         : "";
 
-    const publicRef = db.doc(`publicEmergencyQrs/${qrId}`);
-    const registryRef = db.doc(`emergencyQrRegistry/${qrId}`);
+    if (message.length > 500) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Emergency message exceeds 500 characters."
+      );
+    }
 
-    // One cooldown document per QR.
-    // Client SDK access must remain denied by Firestore rules.
+    const publicRef = db.doc(
+      `publicEmergencyQrs/${qrId}`
+    );
+
+    const registryRef = db.doc(
+      `emergencyQrRegistry/${qrId}`
+    );
+
     const cooldownRef = db.doc(
       `emergencyNotificationLimits/${qrId}`
     );
 
-    let recipientEmails: string[] = [];
-    let patientName = "";
+    let recipients: string[] = [];
+    let patientName = "Emergency QR holder";
 
+    // All security checks and cooldown reservation happen
+    // in one Firestore transaction.
     await db.runTransaction(async (tx) => {
       const [
         publicSnap,
@@ -138,18 +222,9 @@ export const notifyEmergencyContacts = onCall(
         tx.get(cooldownRef),
       ]);
 
-      const publicData = publicSnap.data();
-      const registry = registrySnap.data();
-
       if (
         !publicSnap.exists ||
-        !registrySnap.exists ||
-        publicData?.status !== "ACTIVE" ||
-        publicData.qrId !== qrId ||
-        typeof publicData.ownerId !== "string" ||
-        registry?.qrId !== qrId ||
-        registry.ownerId !== publicData.ownerId ||
-        registry.profileId !== publicData.ownerId
+        !registrySnap.exists
       ) {
         throw new HttpsError(
           "failed-precondition",
@@ -157,7 +232,25 @@ export const notifyEmergencyContacts = onCall(
         );
       }
 
-      const ownerId = publicData.ownerId as string;
+      const publicData = publicSnap.data();
+      const registryData = registrySnap.data();
+      const ownerId = registryData?.ownerId;
+
+      if (
+        publicData?.status !== "ACTIVE" ||
+        publicData?.qrId !== qrId ||
+        typeof ownerId !== "string" ||
+        !ownerId ||
+        registryData?.qrId !== qrId ||
+        registryData?.profileId !== ownerId ||
+        publicData?.ownerId !== ownerId ||
+        registryData?.retiredAt
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This emergency QR is not active."
+        );
+      }
 
       const profileRef = db.doc(
         `emergencyProfiles/${ownerId}`
@@ -167,29 +260,40 @@ export const notifyEmergencyContacts = onCall(
         `personalEmergencyQrs/${ownerId}`
       );
 
-      const [profileSnap, personalQrSnap] =
-        await Promise.all([
-          tx.get(profileRef),
-          tx.get(personalQrRef),
-        ]);
+      const [
+        profileSnap,
+        personalQrSnap,
+      ] = await Promise.all([
+        tx.get(profileRef),
+        tx.get(personalQrRef),
+      ]);
+
+      if (
+        !profileSnap.exists ||
+        !personalQrSnap.exists
+      ) {
+        throw new HttpsError(
+          "failed-precondition",
+          "The emergency profile is unavailable."
+        );
+      }
 
       const profile = profileSnap.data();
       const personalQr = personalQrSnap.data();
 
       if (
-        !profileSnap.exists ||
-        !personalQrSnap.exists ||
         profile?.ownerId !== ownerId ||
-        profile.consentGiven !== true ||
-        profile.updatedAt !== publicData.sourceUpdatedAt ||
+        profile?.consentGiven !== true ||
         personalQr?.id !== qrId ||
-        personalQr.ownerId !== ownerId ||
-        personalQr.profileId !== ownerId ||
-        personalQr.status !== "ACTIVE"
+        personalQr?.ownerId !== ownerId ||
+        personalQr?.profileId !== ownerId ||
+        personalQr?.status !== "ACTIVE" ||
+        typeof profile?.updatedAt !== "string" ||
+        profile.updatedAt !== publicData.sourceUpdatedAt
       ) {
         throw new HttpsError(
           "failed-precondition",
-          "This emergency profile is unavailable."
+          "The emergency profile is not currently available."
         );
       }
 
@@ -199,160 +303,204 @@ export const notifyEmergencyContacts = onCall(
         ? (profile.emergencyContacts as Contact[])
         : [];
 
-      recipientEmails = [
-        ...new Set(
-          contacts
-            .filter(
-              (contact) =>
-                contact &&
-                validEmail(contact.email)
-            )
-            .map(
-              (contact) =>
-                (contact.email as string)
-                  .trim()
-                  .toLowerCase()
-            )
-        ),
-      ];
+      const emails = new Set<string>();
 
-      if (recipientEmails.length === 0) {
+      for (const contact of contacts) {
+        if (validEmail(contact?.email)) {
+          emails.add(
+            contact.email.trim().toLowerCase()
+          );
+        }
+      }
+
+      if (emails.size === 0) {
         throw new HttpsError(
           "failed-precondition",
-          "No notification email addresses are registered."
+          "No valid emergency contact email addresses are registered."
         );
       }
 
-      const now = Date.now();
-      const previous = cooldownSnap.data()?.lastAttemptAt;
+      const previous = cooldownSnap.data();
 
       if (
-        previous instanceof Timestamp &&
-        now - previous.toMillis() < COOLDOWN_MS
+        previous?.lastAttemptAt instanceof Timestamp &&
+        Date.now() -
+          previous.lastAttemptAt.toMillis() <
+          COOLDOWN_MS
       ) {
         throw new HttpsError(
           "resource-exhausted",
-          "A notification was recently requested. " +
-          "Please call the emergency contacts directly " +
-          "or try again later."
+          "An emergency notification was recently requested. Contact emergency services or registered contacts directly."
         );
       }
+
+      recipients = [...emails];
 
       patientName =
-        typeof profile.fullName === "string"
-          ? cleanLine(profile.fullName).slice(0, 120)
-          : "HealthPassport user";
+        typeof profile.fullName === "string" &&
+        profile.fullName.trim()
+          ? cleanLine(profile.fullName)
+          : "Emergency QR holder";
 
-      // Reserve the cooldown atomically before SMTP delivery.
-      // This prevents concurrent requests from sending duplicates.
-      tx.set(cooldownRef, {
-        qrId,
-        lastAttemptAt: Timestamp.fromMillis(now),
-        lastAttemptStatus: "PENDING",
+      // This write is atomic with the checks above.
+      // Competing first-time requests must retry the
+      // transaction and then encounter this cooldown.
+      tx.set(
+        cooldownRef,
+        {
+          qrId,
+          lastAttemptAt: Timestamp.now(),
+          lastAttemptStatus: "PENDING",
+          acceptedCount: 0,
+          failedCount: 0,
+          recipientCount: recipients.length,
+          locationProvided: location !== null,
+        },
+        { merge: true }
+      );
+    });
+
+    // The test transport is available ONLY inside the
+    // Firebase Functions emulator.
+    const isEmulator =
+      process.env.FUNCTIONS_EMULATOR === "true";
+
+let transporter: Transporter;
+    if (isEmulator) {
+      transporter = nodemailer.createTransport({
+        host: "127.0.0.1",
+        port: 2525,
+        secure: false,
+        ignoreTLS: true,
+        connectionTimeout: SMTP_TIMEOUT_MS,
+        greetingTimeout: SMTP_TIMEOUT_MS,
+        socketTimeout: SMTP_TIMEOUT_MS,
       });
-    });
 
-    const googleMapsUrl =
-      "https://www.google.com/maps/search/?api=1&query=" +
-      encodeURIComponent(`${latitude},${longitude}`);
+      console.log(
+        "Using local SMTP test transport."
+      );
+    } else {
+      const sender = emailUser.value();
+      const password = emailPassword.value();
 
-    const appleMapsUrl =
-      "https://maps.apple.com/?ll=" +
-      encodeURIComponent(`${latitude},${longitude}`);
-
-    const emailText = [
-      "HEALTHPASSPORT EMERGENCY NOTIFICATION",
-      "",
-      `Emergency profile: ${patientName}`,
-      "",
-      "Someone scanned this person's emergency QR " +
-        "and requested that their emergency contacts be notified.",
-      "",
-      "SCANNER'S REPORTED LOCATION",
-      `Latitude: ${latitude}`,
-      `Longitude: ${longitude}`,
-      `Reported GPS accuracy: approximately ${accuracy} metres`,
-      "",
-      `Google Maps: ${googleMapsUrl}`,
-      `Apple Maps: ${appleMapsUrl}`,
-      "",
-      "MESSAGE FROM THE SCANNER",
-      message || "No additional message provided.",
-      "",
-      "IMPORTANT",
-      "These coordinates are from the scanner's device. " +
-        "They are not independently verified and may not " +
-        "represent the patient's exact location.",
-      "",
-      "If this is an emergency, contact local emergency " +
-        "services immediately. Do not rely solely on email.",
-    ].join("\n");
-
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: emailUser.value(),
-        pass: emailPassword.value(),
-      },
-    });
-
-    let acceptedCount = 0;
-
-    // Send separately so recipients cannot see one another's
-    // email addresses.
-    for (const recipient of recipientEmails) {
-      try {
-        const result = await transporter.sendMail({
-          from: {
-            name: "HealthPassport Emergency QR",
-            address: emailUser.value(),
-          },
-          to: recipient,
-          subject:
-            `Emergency QR notification: ${patientName}`,
-          text: emailText,
+      if (!sender || !password) {
+        await cooldownRef.update({
+          lastAttemptStatus: "FAILED",
+          completedAt: Timestamp.now(),
         });
 
-        if (
-          result.accepted.some(
-            (address) =>
-              address.toLowerCase() === recipient
-          )
-        ) {
-          acceptedCount++;
-        }
-      } catch (error) {
-        // Do not expose SMTP errors or recipient addresses
-        // to an anonymous scanner.
-        console.error(
-          "Emergency notification SMTP failure:",
-          error instanceof Error ? error.message : "Unknown error"
+        throw new HttpsError(
+          "unavailable",
+          "Emergency email notification is temporarily unavailable."
         );
       }
+
+      transporter = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        auth: {
+          user: sender,
+          pass: password,
+        },
+        connectionTimeout: SMTP_TIMEOUT_MS,
+        greetingTimeout: SMTP_TIMEOUT_MS,
+        socketTimeout: SMTP_TIMEOUT_MS,
+      });
     }
 
-    await cooldownRef.update({
-      lastAttemptStatus:
-        acceptedCount > 0 ? "ACCEPTED" : "FAILED",
-      acceptedCount,
-    });
+    const senderAddress = isEmulator
+      ? "healthpassport-test@example.com"
+      : emailUser.value();
+
+    const body = emailBody(
+      patientName,
+      location,
+      message
+    );
+
+    let acceptedCount = 0;
+    let failedCount = 0;
+
+    try {
+      // Individual sends protect recipient privacy.
+      for (const recipient of recipients) {
+        try {
+          const result = await transporter.sendMail({
+            from: senderAddress,
+            to: recipient,
+            subject:
+              "HealthPassport Emergency QR — Assistance Requested",
+            text: body,
+          });
+
+          const accepted = (result.accepted ?? []).some(
+  (address: string) =>
+    address.toLowerCase() === recipient
+);
+
+          if (accepted) {
+            acceptedCount++;
+          } else {
+            failedCount++;
+          }
+        } catch (error) {
+          failedCount++;
+
+          console.error(
+            "Emergency SMTP attempt failed:",
+            error instanceof Error
+              ? error.message
+              : "Unknown SMTP error"
+          );
+        }
+      }
+    } finally {
+      transporter.close();
+    }
+
+    const status =
+      acceptedCount === 0
+        ? "FAILED"
+        : failedCount > 0
+          ? "PARTIAL"
+          : "ACCEPTED";
+
+    try {
+      await cooldownRef.update({
+        lastAttemptStatus: status,
+        acceptedCount,
+        failedCount,
+        recipientCount: recipients.length,
+        completedAt: Timestamp.now(),
+      });
+    } catch (error) {
+      // Email acceptance cannot be rolled back if
+      // recording the final status fails.
+      console.error(
+        "Could not record notification outcome:",
+        error
+      );
+    }
 
     if (acceptedCount === 0) {
       throw new HttpsError(
         "unavailable",
-        "The notification could not be accepted by the email service. " +
-        "Please call an emergency contact directly."
+        "No emergency notification emails were accepted. Contact emergency services or registered contacts directly."
       );
     }
+
+    const partialSuccess = failedCount > 0;
 
     return {
       success: true,
       acceptedCount,
-      message:
-        "The email service accepted the emergency notification. " +
-        "Inbox delivery is not guaranteed.",
+      recipientCount: recipients.length,
+      partialSuccess,
+      message: partialSuccess
+        ? "Some notification emails were accepted, but others failed."
+        : "Notification emails were accepted by the mail server. Inbox delivery is not guaranteed.",
     };
   }
 );

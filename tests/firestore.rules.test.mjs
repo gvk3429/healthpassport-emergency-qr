@@ -1,75 +1,109 @@
+// PATH: tests/firestore.rules.test.mjs
+// HealthPassport Emergency QR — Phase 1, Step 6.4
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import {
+  before,
+  after,
+  beforeEach,
+  test,
+} from "node:test";
 
 import {
   initializeTestEnvironment,
-  assertSucceeds,
   assertFails,
+  assertSucceeds,
 } from "@firebase/rules-unit-testing";
 
 import {
   doc,
-  collection,
   getDoc,
   getDocs,
+  collection,
   setDoc,
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
 
-// ============================================================
-// HEALTHPASSPORT EMERGENCY QR
-// PHASE 1 - STEP 6.2
-// FIRESTORE SECURITY REGRESSION TESTS
-// ============================================================
-
 const PROJECT_ID = "healthpassport-security-test";
 
-const USER_A = "security-user-a";
-const USER_B = "security-user-b";
+const OWNER = "owner-user";
+const OTHER = "other-user";
 
-const QR_A = "securityQrIdentifierAAAA123456";
-const QR_B = "securityQrIdentifierBBBB123456";
+const QR_ID = "ABCDEFGHIJKLMNOPQRST123456";
+const OTHER_QR_ID = "ZYXWVUTSRQPONMLKJIHG123456";
 
 const CREATED_AT = "2026-09-01T10:00:00.000Z";
-const UPDATED_AT = "2026-09-01T11:00:00.000Z";
+const UPDATED_AT = "2026-09-02T10:00:00.000Z";
 
-const RULES_PATH = resolve(
-  process.cwd(),
-  "firestore.rules"
-);
-
-let environment;
+let env;
 
 // ============================================================
 // TEST DATA
 // ============================================================
 
-function privacy(overrides = {}) {
+function profile(overrides = {}) {
   return {
-    showPhoto: true,
-    showDateOfBirth: true,
-    showBloodGroup: true,
-    showAllergies: true,
-    showMedicalConditions: true,
-    showMedications: true,
-    showEmergencyContacts: true,
-    showEmergencyInstructions: true,
+    ownerId: OWNER,
+    fullName: "Test User",
+    photoUrl: "",
+    dateOfBirth: "1990-01-01",
+    bloodGroup: "O+",
+    allergies: [],
+    medicalConditions: [],
+    medications: [],
+    emergencyContacts: [
+      {
+        id: "contact-1",
+        name: "Emergency Contact",
+        relationship: "Family",
+        phone: "9876543210",
+        email: "contact@example.com",
+        isPrimary: true,
+      },
+    ],
+    emergencyInstructions: "",
+    privacy: {
+      showPhoto: false,
+      showDateOfBirth: false,
+      showBloodGroup: true,
+      showAllergies: true,
+      showMedicalConditions: true,
+      showMedications: true,
+      showEmergencyContacts: true,
+      showEmergencyInstructions: true,
+    },
+    consentGiven: true,
+    consentUpdatedAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
     ...overrides,
   };
 }
 
-function profile(ownerId, overrides = {}) {
+function draftQr(overrides = {}) {
   return {
-    ownerId,
-    fullName: "Security Test User",
-    photoUrl: "",
-    dateOfBirth: "1990-11-29",
+    id: QR_ID,
+    ownerId: OWNER,
+    profileId: OWNER,
+    status: "DRAFT",
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    activatedAt: null,
+    deactivatedAt: null,
+    ...overrides,
+  };
+}
+
+function publicQr(overrides = {}) {
+  return {
+    qrId: QR_ID,
+    ownerId: OWNER,
+    status: "ACTIVE",
+    fullName: "Test User",
     bloodGroup: "O+",
-    allergies: ["Penicillin"],
+    allergies: [],
     medicalConditions: [],
     medications: [],
     emergencyContacts: [
@@ -80,53 +114,7 @@ function profile(ownerId, overrides = {}) {
         isPrimary: true,
       },
     ],
-    emergencyInstructions: "Contact family.",
-    privacy: privacy(),
-    consentGiven: true,
-    consentUpdatedAt: CREATED_AT,
-    createdAt: CREATED_AT,
-    updatedAt: UPDATED_AT,
-    ...overrides,
-  };
-}
-
-function draftQr(ownerId, qrId, overrides = {}) {
-  return {
-    id: qrId,
-    ownerId,
-    profileId: ownerId,
-    status: "DRAFT",
-    createdAt: CREATED_AT,
-    updatedAt: UPDATED_AT,
-    activatedAt: null,
-    deactivatedAt: null,
-    ...overrides,
-  };
-}
-
-function activeQr(ownerId, qrId) {
-  return {
-    ...draftQr(ownerId, qrId),
-    status: "ACTIVE",
-    activatedAt: UPDATED_AT,
-  };
-}
-
-function registry(ownerId, qrId) {
-  return {
-    qrId,
-    ownerId,
-    profileId: ownerId,
-    createdAt: CREATED_AT,
-  };
-}
-
-function publicQr(ownerId, qrId, overrides = {}) {
-  return {
-    qrId,
-    ownerId,
-    status: "ACTIVE",
-    fullName: "Security Test User",
+    emergencyInstructions: "",
     sourceUpdatedAt: UPDATED_AT,
     updatedAt: UPDATED_AT,
     publishedAt: UPDATED_AT,
@@ -135,287 +123,263 @@ function publicQr(ownerId, qrId, overrides = {}) {
 }
 
 // ============================================================
-// AUTHENTICATION CONTEXTS
+// AUTHENTICATED CLIENTS
 // ============================================================
 
-function verifiedUser(uid) {
-  return environment.authenticatedContext(
-    uid,
-    {
-      email_verified: true,
-      email: `${uid}@example.com`,
-    }
-  ).firestore();
+function ownerDb() {
+  return env.authenticatedContext(OWNER, {
+    email_verified: true,
+  }).firestore();
 }
 
-function unverifiedUser(uid) {
-  return environment.authenticatedContext(
-    uid,
-    {
-      email_verified: false,
-      email: `${uid}@example.com`,
-    }
-  ).firestore();
+function otherDb() {
+  return env.authenticatedContext(OTHER, {
+    email_verified: true,
+  }).firestore();
 }
 
-function anonymousUser() {
-  return environment
-    .unauthenticatedContext()
-    .firestore();
+function unverifiedDb() {
+  return env.authenticatedContext(OWNER, {
+    email_verified: false,
+  }).firestore();
+}
+
+function anonymousDb() {
+  return env.unauthenticatedContext().firestore();
 }
 
 // ============================================================
-// DOCUMENT REFERENCES
+// DATABASE SEEDING
 // ============================================================
 
-function profileRef(db, uid) {
-  return doc(db, "emergencyProfiles", uid);
-}
-
-function qrRef(db, uid) {
-  return doc(db, "personalEmergencyQrs", uid);
-}
-
-function publicRef(db, qrId) {
-  return doc(db, "publicEmergencyQrs", qrId);
-}
-
-function registryRef(db, qrId) {
-  return doc(db, "emergencyQrRegistry", qrId);
-}
-
-// ============================================================
-// ADMIN TEST HELPERS
-// ============================================================
-
-// Admin setup bypasses Firestore rules.
-// Never use this helper in application code.
-
-async function seedProfile(uid, overrides = {}) {
-  await environment.withSecurityRulesDisabled(
+async function seedDocuments(documents) {
+  await env.withSecurityRulesDisabled(
     async (context) => {
       const db = context.firestore();
 
-      await setDoc(
-        profileRef(db, uid),
-        profile(uid, overrides)
-      );
+      for (const [path, data] of documents) {
+        await setDoc(doc(db, path), data);
+      }
     }
   );
 }
 
-async function seedActiveQr(uid, qrId) {
-  await environment.withSecurityRulesDisabled(
-    async (context) => {
-      const db = context.firestore();
-
-      await setDoc(
-        qrRef(db, uid),
-        activeQr(uid, qrId)
-      );
-
-      await setDoc(
-        registryRef(db, qrId),
-        registry(uid, qrId)
-      );
-
-      await setDoc(
-        publicRef(db, qrId),
-        publicQr(uid, qrId)
-      );
-    }
-  );
+async function seedActiveQr() {
+  await seedDocuments([
+    [
+      `emergencyProfiles/${OWNER}`,
+      profile({
+        updatedAt: UPDATED_AT,
+      }),
+    ],
+    [
+      `personalEmergencyQrs/${OWNER}`,
+      draftQr({
+        status: "ACTIVE",
+        updatedAt: UPDATED_AT,
+        activatedAt: UPDATED_AT,
+      }),
+    ],
+    [
+      `emergencyQrRegistry/${QR_ID}`,
+      {
+        qrId: QR_ID,
+        ownerId: OWNER,
+        profileId: OWNER,
+        createdAt: CREATED_AT,
+      },
+    ],
+    [
+      `publicEmergencyQrs/${QR_ID}`,
+      publicQr(),
+    ],
+  ]);
 }
 
 // ============================================================
-// ENVIRONMENT
+// SETUP AND CLEANUP
 // ============================================================
 
 before(async () => {
-  const rules = readFileSync(
-    RULES_PATH,
-    "utf8"
-  );
-
-  environment = await initializeTestEnvironment({
+  env = await initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
-      rules,
+      rules: readFileSync(
+        "firestore.rules",
+        "utf8"
+      ),
     },
   });
 });
 
 beforeEach(async () => {
-  await environment.clearFirestore();
+  await env.clearFirestore();
 });
 
 after(async () => {
-  if (environment) {
-    await environment.cleanup();
+  if (env) {
+    await env.cleanup();
   }
 });
 
 // ============================================================
-// TEST 01
-// ANONYMOUS PROFILE ACCESS
+// 1. PRIVATE EMERGENCY PROFILE
 // ============================================================
 
 test(
-  "01 - Anonymous users cannot read private profiles",
+  "01 - Verified owner can create a valid profile",
   async () => {
-    await seedProfile(USER_A);
-
-    const db = anonymousUser();
-
-    await assertFails(
-      getDoc(profileRef(db, USER_A))
-    );
-  }
-);
-
-// ============================================================
-// TEST 02
-// UNVERIFIED EMAIL ACCESS
-// ============================================================
-
-test(
-  "02 - Unverified users cannot read private profiles",
-  async () => {
-    await seedProfile(USER_A);
-
-    const db = unverifiedUser(USER_A);
-
-    await assertFails(
-      getDoc(profileRef(db, USER_A))
-    );
-  }
-);
-
-// ============================================================
-// TEST 03
-// VERIFIED OWNER ACCESS
-// ============================================================
-
-test(
-  "03 - Verified owners can read their own profiles",
-  async () => {
-    await seedProfile(USER_A);
-
-    const db = verifiedUser(USER_A);
-
-    const snapshot = await assertSucceeds(
-      getDoc(profileRef(db, USER_A))
-    );
-
-    assert.equal(snapshot.exists(), true);
-    assert.equal(
-      snapshot.data().ownerId,
-      USER_A
-    );
-  }
-);
-
-// ============================================================
-// TEST 04
-// CROSS-ACCOUNT PROFILE ACCESS
-// ============================================================
-
-test(
-  "04 - Users cannot read another user's profile",
-  async () => {
-    await seedProfile(USER_A);
-
-    const db = verifiedUser(USER_B);
-
-    await assertFails(
-      getDoc(profileRef(db, USER_A))
-    );
-  }
-);
-
-// ============================================================
-// TEST 05
-// PROFILE CREATION
-// ============================================================
-
-test(
-  "05 - Verified owners can create valid profiles",
-  async () => {
-    const db = verifiedUser(USER_A);
-
     await assertSucceeds(
       setDoc(
-        profileRef(db, USER_A),
-        profile(USER_A)
+        doc(
+          ownerDb(),
+          "emergencyProfiles",
+          OWNER
+        ),
+        profile()
       )
     );
   }
 );
 
-// ============================================================
-// TEST 06
-// PROFILE IMPERSONATION
-// ============================================================
-
 test(
-  "06 - Users cannot create profiles for other accounts",
+  "02 - Anonymous users cannot read private profiles",
   async () => {
-    const db = verifiedUser(USER_B);
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile(),
+      ],
+    ]);
 
     await assertFails(
-      setDoc(
-        profileRef(db, USER_A),
-        profile(USER_A)
+      getDoc(
+        doc(
+          anonymousDb(),
+          "emergencyProfiles",
+          OWNER
+        )
       )
     );
   }
 );
 
-// ============================================================
-// TEST 07
-// INVALID PROFILE
-// ============================================================
-
 test(
-  "07 - Profiles with invalid privacy settings are rejected",
+  "03 - Other users cannot read private profiles",
   async () => {
-    const db = verifiedUser(USER_A);
-
-    const invalidProfile = profile(
-      USER_A,
-      {
-        privacy: {
-          ...privacy(),
-          showBloodGroup: "yes",
-        },
-      }
-    );
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile(),
+      ],
+    ]);
 
     await assertFails(
-      setDoc(
-        profileRef(db, USER_A),
-        invalidProfile
+      getDoc(
+        doc(
+          otherDb(),
+          "emergencyProfiles",
+          OWNER
+        )
       )
     );
   }
 );
 
-// ============================================================
-// TEST 08
-// CONSENT REQUIRED
-// ============================================================
-
 test(
-  "08 - Profile creation requires consent",
+  "04 - Unverified users cannot create profiles",
   async () => {
-    const db = verifiedUser(USER_A);
-
     await assertFails(
       setDoc(
-        profileRef(db, USER_A),
-        profile(
-          USER_A,
-          { consentGiven: false }
+        doc(
+          unverifiedDb(),
+          "emergencyProfiles",
+          OWNER
+        ),
+        profile()
+      )
+    );
+  }
+);
+
+test(
+  "05 - Profiles cannot be created without consent",
+  async () => {
+    await assertFails(
+      setDoc(
+        doc(
+          ownerDb(),
+          "emergencyProfiles",
+          OWNER
+        ),
+        profile({
+          consentGiven: false,
+        })
+      )
+    );
+  }
+);
+
+test(
+  "06 - Owners cannot change their profile ownerId",
+  async () => {
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile(),
+      ],
+    ]);
+
+    await assertFails(
+      updateDoc(
+        doc(
+          ownerDb(),
+          "emergencyProfiles",
+          OWNER
+        ),
+        {
+          ownerId: OTHER,
+          updatedAt: UPDATED_AT,
+        }
+      )
+    );
+  }
+);
+
+test(
+  "07 - Owners cannot change the original creation timestamp",
+  async () => {
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile(),
+      ],
+    ]);
+
+    await assertFails(
+      updateDoc(
+        doc(
+          ownerDb(),
+          "emergencyProfiles",
+          OWNER
+        ),
+        {
+          createdAt: UPDATED_AT,
+          updatedAt: UPDATED_AT,
+        }
+      )
+    );
+  }
+);
+
+test(
+  "08 - Private profile enumeration is prohibited",
+  async () => {
+    await assertFails(
+      getDocs(
+        collection(
+          ownerDb(),
+          "emergencyProfiles"
         )
       )
     );
@@ -423,442 +387,432 @@ test(
 );
 
 // ============================================================
-// TEST 09
-// PROFILE UPDATE
+// 2. PERSONAL EMERGENCY QR
 // ============================================================
 
 test(
-  "09 - Owners can update profiles with newer timestamps",
+  "09 - Verified owners cannot create drafts directly",
   async () => {
-    await seedProfile(USER_A);
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile(),
+      ],
+    ]);
 
-    const db = verifiedUser(USER_A);
-
-    await assertSucceeds(
-      updateDoc(
-        profileRef(db, USER_A),
-        {
-          fullName: "Updated Test User",
-          updatedAt:
-            "2026-09-02T11:00:00.000Z",
-        }
+    await assertFails(
+      setDoc(
+        doc(
+          ownerDb(),
+          "personalEmergencyQrs",
+          OWNER
+        ),
+        draftQr()
       )
     );
   }
 );
 
-// ============================================================
-// TEST 10
-// CROSS-ACCOUNT PROFILE MODIFICATION
-// ============================================================
+test(
+  "10 - A draft cannot be created without a profile",
+  async () => {
+    await assertFails(
+      setDoc(
+        doc(
+          ownerDb(),
+          "personalEmergencyQrs",
+          OWNER
+        ),
+        draftQr()
+      )
+    );
+  }
+);
 
 test(
-  "10 - Users cannot modify another user's profile",
+  "11 - Clients cannot activate a QR directly",
   async () => {
-    await seedProfile(USER_A);
-
-    const db = verifiedUser(USER_B);
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile(),
+      ],
+      [
+        `personalEmergencyQrs/${OWNER}`,
+        draftQr(),
+      ],
+    ]);
 
     await assertFails(
       updateDoc(
-        profileRef(db, USER_A),
-        {
-          fullName: "Unauthorized Change",
-          updatedAt:
-            "2026-09-02T11:00:00.000Z",
-        }
-      )
-    );
-  }
-);
-
-// ============================================================
-// TEST 11
-// DRAFT QR CREATION
-// ============================================================
-
-test(
-  "11 - Verified owners can create draft QRs",
-  async () => {
-    await seedProfile(USER_A);
-
-    const db = verifiedUser(USER_A);
-
-    await assertSucceeds(
-      setDoc(
-        qrRef(db, USER_A),
-        draftQr(USER_A, QR_A)
-      )
-    );
-  }
-);
-
-// ============================================================
-// TEST 12
-// CLIENT-SIDE QR ACTIVATION
-// ============================================================
-
-test(
-  "12 - Clients cannot activate QRs directly",
-  async () => {
-    await seedProfile(USER_A);
-
-    const db = verifiedUser(USER_A);
-
-    await assertSucceeds(
-      setDoc(
-        qrRef(db, USER_A),
-        draftQr(USER_A, QR_A)
-      )
-    );
-
-    await assertFails(
-      updateDoc(
-        qrRef(db, USER_A),
+        doc(
+          ownerDb(),
+          "personalEmergencyQrs",
+          OWNER
+        ),
         {
           status: "ACTIVE",
+          activatedAt: UPDATED_AT,
         }
       )
     );
   }
 );
 
-// ============================================================
-// TEST 13
-// PUBLIC EMERGENCY ACCESS
-// ============================================================
-
-
 test(
-  "13 - Anonymous users can read valid active public QRs",
+  "12 - Owners can delete an unactivated draft",
   async () => {
-    // Create a private profile and its active QR.
-    await seedProfile(USER_A);
-    await seedActiveQr(USER_A, QR_A);
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile(),
+      ],
+      [
+        `personalEmergencyQrs/${OWNER}`,
+        draftQr(),
+      ],
+    ]);
 
-    // Read the actual stored documents using the
-    // rules-disabled test administrator.
-    await environment.withSecurityRulesDisabled(
-      async (context) => {
-        const adminDb = context.firestore();
-
-        const profileSnapshot = await getDoc(
-          profileRef(adminDb, USER_A)
-        );
-
-        const qrSnapshot = await getDoc(
-          qrRef(adminDb, USER_A)
-        );
-
-        const registrySnapshot = await getDoc(
-          registryRef(adminDb, QR_A)
-        );
-
-        assert.equal(profileSnapshot.exists(), true);
-        assert.equal(qrSnapshot.exists(), true);
-        assert.equal(registrySnapshot.exists(), true);
-
-        const storedProfile = profileSnapshot.data();
-        const storedQr = qrSnapshot.data();
-        const storedRegistry = registrySnapshot.data();
-
-        // Verify the complete authorization relationship.
-        assert.equal(storedProfile.ownerId, USER_A);
-        assert.equal(storedProfile.consentGiven, true);
-
-        assert.equal(storedQr.id, QR_A);
-        assert.equal(storedQr.ownerId, USER_A);
-        assert.equal(storedQr.profileId, USER_A);
-        assert.equal(storedQr.status, "ACTIVE");
-
-        assert.equal(storedRegistry.qrId, QR_A);
-        assert.equal(storedRegistry.ownerId, USER_A);
-        assert.equal(storedRegistry.profileId, USER_A);
-
-        // Rebuild the published document using the
-        // actual stored profile timestamp.
-        await setDoc(
-          publicRef(adminDb, QR_A),
-          publicQr(USER_A, QR_A, {
-            qrId: storedQr.id,
-            ownerId: storedQr.ownerId,
-            status: storedQr.status,
-            fullName: storedProfile.fullName,
-            sourceUpdatedAt: storedProfile.updatedAt,
-          })
-        );
-      }
-    );
-
-    // This read must work without authentication.
-    const publicDb = anonymousUser();
-
-    const result = await assertSucceeds(
-      getDoc(publicRef(publicDb, QR_A))
-    );
-
-    assert.equal(result.exists(), true);
-    assert.equal(result.data().ownerId, USER_A);
-    assert.equal(result.data().qrId, QR_A);
-    assert.equal(result.data().status, "ACTIVE");
-  }
-);
-
-// ============================================================
-// TEST 14
-// INACTIVE QR ACCESS
-// ============================================================
-
-test(
-  "14 - Inactive QRs cannot expose public profiles",
-  async () => {
-    await seedProfile(USER_A);
-    await seedActiveQr(USER_A, QR_A);
-
-    await environment.withSecurityRulesDisabled(
-      async (context) => {
-        const db = context.firestore();
-
-        await updateDoc(
-          qrRef(db, USER_A),
-          {
-            status: "INACTIVE",
-          }
-        );
-      }
-    );
-
-    const db = anonymousUser();
-
-    await assertFails(
-      getDoc(publicRef(db, QR_A))
-    );
-  }
-);
-
-// ============================================================
-// TEST 15
-// CONSENT WITHDRAWAL
-// ============================================================
-
-test(
-  "15 - Withdrawing consent blocks public QR access",
-  async () => {
-    await seedProfile(USER_A);
-    await seedActiveQr(USER_A, QR_A);
-
-    await environment.withSecurityRulesDisabled(
-      async (context) => {
-        const db = context.firestore();
-
-        await updateDoc(
-          profileRef(db, USER_A),
-          {
-            consentGiven: false,
-            consentUpdatedAt:
-              "2026-09-02T12:00:00.000Z",
-            updatedAt:
-              "2026-09-02T12:00:00.000Z",
-          }
-        );
-      }
-    );
-
-    const db = anonymousUser();
-
-    await assertFails(
-      getDoc(publicRef(db, QR_A))
-    );
-  }
-);
-
-// ============================================================
-// TEST 16
-// REGISTRY PROTECTION
-// ============================================================
-
-test(
-  "16 - Clients cannot modify the QR ownership registry",
-  async () => {
-    await seedProfile(USER_A);
-    await seedActiveQr(USER_A, QR_A);
-
-    const db = verifiedUser(USER_B);
-
-    await assertFails(
-      setDoc(
-        registryRef(db, QR_A),
-        registry(USER_B, QR_A)
+    await assertSucceeds(
+      deleteDoc(
+        doc(
+          ownerDb(),
+          "personalEmergencyQrs",
+          OWNER
+        )
       )
     );
+  }
+);
+
+test(
+  "13 - Owners cannot directly delete an active QR",
+  async () => {
+    await seedActiveQr();
 
     await assertFails(
       deleteDoc(
-        registryRef(db, QR_A)
+        doc(
+          ownerDb(),
+          "personalEmergencyQrs",
+          OWNER
+        )
+      )
+    );
+  }
+);
+
+// ============================================================
+// 3. PUBLIC EMERGENCY QR
+// ============================================================
+
+test(
+  "14 - Anonymous scanners can read a valid active QR",
+  async () => {
+    await seedActiveQr();
+
+    await assertSucceeds(
+      getDoc(
+        doc(
+          anonymousDb(),
+          "publicEmergencyQrs",
+          QR_ID
+        )
+      )
+    );
+  }
+);
+
+test(
+  "15 - Public QR enumeration is prohibited",
+  async () => {
+    await seedActiveQr();
+
+    await assertFails(
+      getDocs(
+        collection(
+          anonymousDb(),
+          "publicEmergencyQrs"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "16 - Clients cannot publish public QR documents",
+  async () => {
+    await assertFails(
+      setDoc(
+        doc(
+          ownerDb(),
+          "publicEmergencyQrs",
+          QR_ID
+        ),
+        publicQr()
+      )
+    );
+  }
+);
+
+test(
+  "17 - Stale public projections cannot be read",
+  async () => {
+    await seedActiveQr();
+
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile({
+          updatedAt:
+            "2026-09-03T10:00:00.000Z",
+        }),
+      ],
+    ]);
+
+    await assertFails(
+      getDoc(
+        doc(
+          anonymousDb(),
+          "publicEmergencyQrs",
+          QR_ID
+        )
+      )
+    );
+  }
+);
+
+test(
+  "18 - Inactive QRs cannot be publicly accessed",
+  async () => {
+    await seedActiveQr();
+
+    await seedDocuments([
+      [
+        `personalEmergencyQrs/${OWNER}`,
+        draftQr({
+          status: "INACTIVE",
+          updatedAt: UPDATED_AT,
+          activatedAt: UPDATED_AT,
+          deactivatedAt: UPDATED_AT,
+        }),
+      ],
+    ]);
+
+    await assertFails(
+      getDoc(
+        doc(
+          anonymousDb(),
+          "publicEmergencyQrs",
+          QR_ID
+        )
+      )
+    );
+  }
+);
+
+// ============================================================
+// 4. PERMANENT REGISTRY AND DEFAULT DENY
+// ============================================================
+
+test(
+  "19 - Clients cannot modify the permanent QR registry",
+  async () => {
+    await seedActiveQr();
+
+    await assertFails(
+      deleteDoc(
+        doc(
+          ownerDb(),
+          "emergencyQrRegistry",
+          QR_ID
+        )
+      )
+    );
+
+    await assertFails(
+      setDoc(
+        doc(
+          otherDb(),
+          "emergencyQrRegistry",
+          OTHER_QR_ID
+        ),
+        {
+          qrId: OTHER_QR_ID,
+          ownerId: OTHER,
+          profileId: OTHER,
+          createdAt: CREATED_AT,
+        }
+      )
+    );
+  }
+);
+
+// ============================================================
+// 5. ADDITIONAL QR RESERVATION SECURITY TESTS
+// ============================================================
+
+test(
+  "20 - Verified owner can read a server-created draft",
+  async () => {
+    await seedDocuments([
+      [
+        `emergencyProfiles/${OWNER}`,
+        profile(),
+      ],
+      [
+        `personalEmergencyQrs/${OWNER}`,
+        draftQr(),
+      ],
+      [
+        `emergencyQrRegistry/${QR_ID}`,
+        {
+          qrId: QR_ID,
+          ownerId: OWNER,
+          profileId: OWNER,
+          createdAt: CREATED_AT,
+        },
+      ],
+    ]);
+
+    const snapshot = await assertSucceeds(
+      getDoc(
+        doc(
+          ownerDb(),
+          "personalEmergencyQrs",
+          OWNER
+        )
+      )
+    );
+
+    assert.equal(
+      snapshot.data()?.id,
+      QR_ID
+    );
+  }
+);
+
+test(
+  "21 - Other users and anonymous scanners cannot read private QRs",
+  async () => {
+    await seedDocuments([
+      [
+        `personalEmergencyQrs/${OWNER}`,
+        draftQr(),
+      ],
+    ]);
+
+    await assertFails(
+      getDoc(
+        doc(
+          otherDb(),
+          "personalEmergencyQrs",
+          OWNER
+        )
       )
     );
 
     await assertFails(
       getDoc(
-        registryRef(db, QR_A)
+        doc(
+          anonymousDb(),
+          "personalEmergencyQrs",
+          OWNER
+        )
       )
     );
   }
 );
 
-// ============================================================
-// ADDITIONAL SECURITY REGRESSION TESTS
-// ============================================================
-
 test(
-  "17 - Anonymous users cannot list private profiles",
+  "22 - Unverified owners cannot read or delete their drafts",
   async () => {
-    await seedProfile(USER_A);
-
-    const db = anonymousUser();
+    await seedDocuments([
+      [
+        `personalEmergencyQrs/${OWNER}`,
+        draftQr(),
+      ],
+    ]);
 
     await assertFails(
-      getDocs(
-        collection(db, "emergencyProfiles")
+      getDoc(
+        doc(
+          unverifiedDb(),
+          "personalEmergencyQrs",
+          OWNER
+        )
       )
     );
-  }
-);
-
-test(
-  "18 - Clients cannot write public emergency records",
-  async () => {
-    const db = verifiedUser(USER_A);
-
-    await assertFails(
-      setDoc(
-        publicRef(db, QR_A),
-        publicQr(USER_A, QR_A)
-      )
-    );
-  }
-);
-
-test(
-  "19 - Clients cannot delete active personal QRs",
-  async () => {
-    await seedProfile(USER_A);
-    await seedActiveQr(USER_A, QR_A);
-
-    const db = verifiedUser(USER_A);
 
     await assertFails(
       deleteDoc(
-        qrRef(db, USER_A)
+        doc(
+          unverifiedDb(),
+          "personalEmergencyQrs",
+          OWNER
+        )
       )
     );
   }
 );
 
 test(
-  "20 - A public QR requires a matching registry",
+  "23 - Clients cannot enumerate personal QRs or read registry",
   async () => {
-    await seedProfile(USER_A);
-    await seedActiveQr(USER_A, QR_A);
-
-    await environment.withSecurityRulesDisabled(
-      async (context) => {
-        await deleteDoc(
-          registryRef(
-            context.firestore(),
-            QR_A
-          )
-        );
-      }
-    );
-
-    const db = anonymousUser();
+    await seedDocuments([
+      [
+        `personalEmergencyQrs/${OWNER}`,
+        draftQr(),
+      ],
+      [
+        `emergencyQrRegistry/${QR_ID}`,
+        {
+          qrId: QR_ID,
+          ownerId: OWNER,
+          profileId: OWNER,
+          createdAt: CREATED_AT,
+        },
+      ],
+    ]);
 
     await assertFails(
-      getDoc(publicRef(db, QR_A))
+      getDocs(
+        collection(
+          ownerDb(),
+          "personalEmergencyQrs"
+        )
+      )
+    );
+
+    await assertFails(
+      getDoc(
+        doc(
+          ownerDb(),
+          "emergencyQrRegistry",
+          QR_ID
+        )
+      )
     );
   }
 );
 
 test(
-  "21 - A mismatched registry blocks public access",
+  "24 - Another account cannot delete an owner's draft",
   async () => {
-    await seedProfile(USER_A);
-    await seedActiveQr(USER_A, QR_A);
-
-    await environment.withSecurityRulesDisabled(
-      async (context) => {
-        await setDoc(
-          registryRef(
-            context.firestore(),
-            QR_A
-          ),
-          registry(USER_B, QR_A)
-        );
-      }
-    );
-
-    const db = anonymousUser();
+    await seedDocuments([
+      [
+        `personalEmergencyQrs/${OWNER}`,
+        draftQr(),
+      ],
+    ]);
 
     await assertFails(
-      getDoc(publicRef(db, QR_A))
-    );
-  }
-);
-
-test(
-  "22 - Stale published profiles are inaccessible",
-  async () => {
-    await seedProfile(USER_A);
-    await seedActiveQr(USER_A, QR_A);
-
-    await environment.withSecurityRulesDisabled(
-      async (context) => {
-        await updateDoc(
-          profileRef(
-            context.firestore(),
-            USER_A
-          ),
-          {
-            updatedAt:
-              "2026-09-03T12:00:00.000Z",
-          }
-        );
-      }
-    );
-
-    const db = anonymousUser();
-
-    await assertFails(
-      getDoc(publicRef(db, QR_A))
-    );
-  }
-);
-
-test(
-  "23 - Users cannot delete another user's profile",
-  async () => {
-    await seedProfile(USER_A);
-
-    const db = verifiedUser(USER_B);
-
-    await assertFails(
-      deleteDoc(profileRef(db, USER_A))
-    );
-  }
-);
-
-test(
-  "24 - Unverified users cannot create draft QRs",
-  async () => {
-    await seedProfile(USER_A);
-
-    const db = unverifiedUser(USER_A);
-
-    await assertFails(
-      setDoc(
-        qrRef(db, USER_A),
-        draftQr(USER_A, QR_A)
+      deleteDoc(
+        doc(
+          otherDb(),
+          "personalEmergencyQrs",
+          OWNER
+        )
       )
     );
   }

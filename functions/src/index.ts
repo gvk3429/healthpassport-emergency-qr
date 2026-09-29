@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 
 import { initializeApp } from "firebase-admin/app";
 
 import {
-  getFirestore,
   FieldValue,
+  getFirestore,
   Transaction,
 } from "firebase-admin/firestore";
 
@@ -16,19 +17,10 @@ import {
   onDocumentWritten,
 } from "firebase-functions/v2/firestore";
 
-// ============================================================
-// HEALTHPASSPORT EMERGENCY QR
-// SECURE QR LIFECYCLE AND PRIVATE CONTACT EMAIL SUPPORT
-// ============================================================
-
 initializeApp();
 
 const db = getFirestore();
 const REGION = "asia-south1";
-
-// ============================================================
-// TYPES
-// ============================================================
 
 type Privacy = {
   showPhoto: boolean;
@@ -46,11 +38,7 @@ type EmergencyContact = {
   name: string;
   relationship: string;
   phone: string;
-
-  // Private field. Never include in public QR projection.
-  // Optional to preserve existing emergency profiles.
   email?: string;
-
   isPrimary: boolean;
 };
 
@@ -75,11 +63,11 @@ type PersonalQr = {
   ownerId: string;
   profileId: string;
   status: string;
+  createdAt: string;
+  updatedAt: string;
+  activatedAt: string | null;
+  deactivatedAt: string | null;
 };
-
-// ============================================================
-// CONSTANTS
-// ============================================================
 
 const PRIVACY_FIELDS: (keyof Privacy)[] = [
   "showPhoto",
@@ -104,13 +92,7 @@ const BLOOD_GROUPS = [
   "O-",
 ];
 
-// ============================================================
-// GENERAL VALIDATION
-// ============================================================
-
-function validQrId(
-  value: unknown
-): value is string {
+function validQrId(value: unknown): value is string {
   return (
     typeof value === "string" &&
     /^[A-Za-z0-9_-]{20,100}$/.test(value)
@@ -136,20 +118,12 @@ function validStringArray(
   return (
     Array.isArray(value) &&
     value.length <= maxItems &&
-    value.every((item) =>
-      validString(item, 500)
-    )
+    value.every((item) => validString(item, 500))
   );
 }
 
-function validContactEmail(
-  value: unknown
-): boolean {
-  // Existing contacts may not yet have an email.
-  if (
-    value === undefined ||
-    value === ""
-  ) {
+function validContactEmail(value: unknown): boolean {
+  if (value === undefined || value === "") {
     return true;
   }
 
@@ -166,109 +140,46 @@ function validEmergencyContact(
   return (
     contact !== null &&
     typeof contact === "object" &&
-
     (
       contact.id === undefined ||
       validString(contact.id, 100, true)
     ) &&
-
-    validString(
-      contact.name,
-      120,
-      true
-    ) &&
-
-    validString(
-      contact.relationship,
-      120
-    ) &&
-
-    validString(
-      contact.phone,
-      30,
-      true
-    ) &&
-
-    validContactEmail(
-      contact.email
-    ) &&
-
+    validString(contact.name, 120, true) &&
+    validString(contact.relationship, 120) &&
+    validString(contact.phone, 30, true) &&
+    validContactEmail(contact.email) &&
     typeof contact.isPrimary === "boolean"
   );
 }
-
-// ============================================================
-// PRIVATE EMERGENCY PROFILE VALIDATION
-// ============================================================
 
 function validProfile(
   profile: Profile,
   uid: string
 ): boolean {
-  if (
-    !profile ||
-    typeof profile !== "object"
-  ) {
+  if (!profile || typeof profile !== "object") {
     return false;
   }
 
   if (
     profile.ownerId !== uid ||
     profile.consentGiven !== true ||
-
-    !validString(
-      profile.fullName,
-      120,
-      true
-    ) ||
-
-    !validString(
-      profile.photoUrl,
-      2048
-    ) ||
-
-    !validString(
-      profile.dateOfBirth,
-      10
-    ) ||
-
-    !validString(
-      profile.emergencyInstructions,
-      2000
-    ) ||
-
-    !validString(
-      profile.updatedAt,
-      50,
-      true
-    )
+    !validString(profile.fullName, 120, true) ||
+    !validString(profile.photoUrl, 2048) ||
+    !validString(profile.dateOfBirth, 10) ||
+    !validString(profile.emergencyInstructions, 2000) ||
+    !validString(profile.updatedAt, 50, true)
   ) {
     return false;
   }
 
-  if (
-    !BLOOD_GROUPS.includes(
-      profile.bloodGroup
-    )
-  ) {
+  if (!BLOOD_GROUPS.includes(profile.bloodGroup)) {
     return false;
   }
 
   if (
-    !validStringArray(
-      profile.allergies,
-      30
-    ) ||
-
-    !validStringArray(
-      profile.medicalConditions,
-      30
-    ) ||
-
-    !validStringArray(
-      profile.medications,
-      30
-    )
+    !validStringArray(profile.allergies, 30) ||
+    !validStringArray(profile.medicalConditions, 30) ||
+    !validStringArray(profile.medications, 30)
   ) {
     return false;
   }
@@ -276,52 +187,29 @@ function validProfile(
   if (
     !profile.privacy ||
     typeof profile.privacy !== "object" ||
-
     !PRIVACY_FIELDS.every(
       (field) =>
-        typeof profile.privacy[field] ===
-        "boolean"
+        typeof profile.privacy[field] === "boolean"
     )
   ) {
     return false;
   }
 
   if (
-    !Array.isArray(
-      profile.emergencyContacts
-    ) ||
-
+    !Array.isArray(profile.emergencyContacts) ||
     profile.emergencyContacts.length < 1 ||
-
-    profile.emergencyContacts.length > 10
+    profile.emergencyContacts.length > 10 ||
+    !profile.emergencyContacts.every(validEmergencyContact)
   ) {
     return false;
   }
 
-  if (
-    !profile.emergencyContacts.every(
-      validEmergencyContact
-    )
-  ) {
-    return false;
-  }
-
-  // Require exactly one primary contact.
   return (
     profile.emergencyContacts.filter(
-      (contact) =>
-        contact.isPrimary === true
+      (contact) => contact.isPrimary === true
     ).length === 1
   );
 }
-
-// ============================================================
-// PUBLIC QR PROJECTION
-//
-// SECURITY:
-// Emergency-contact email addresses are private.
-// Never copy entire contact objects into public documents.
-// ============================================================
 
 function publicProjection(
   profile: Profile,
@@ -331,103 +219,64 @@ function publicProjection(
   const result: Record<string, unknown> = {
     qrId,
     ownerId,
-
     status: "ACTIVE",
-
-    fullName:
-      profile.fullName.trim(),
-
-    sourceUpdatedAt:
-      profile.updatedAt,
-
-    updatedAt:
-      FieldValue.serverTimestamp(),
-
-    publishedAt:
-      FieldValue.serverTimestamp(),
+    fullName: profile.fullName.trim(),
+    sourceUpdatedAt: profile.updatedAt,
+    updatedAt: FieldValue.serverTimestamp(),
+    publishedAt: FieldValue.serverTimestamp(),
   };
 
   const privacy = profile.privacy;
 
-  if (
-    privacy.showPhoto &&
-    profile.photoUrl
-  ) {
-    result.photoUrl =
-      profile.photoUrl;
+  if (privacy.showPhoto && profile.photoUrl) {
+    result.photoUrl = profile.photoUrl;
   }
 
   if (
     privacy.showDateOfBirth &&
     profile.dateOfBirth
   ) {
-    result.dateOfBirth =
-      profile.dateOfBirth;
+    result.dateOfBirth = profile.dateOfBirth;
   }
 
   if (
     privacy.showBloodGroup &&
     profile.bloodGroup !== "Unknown"
   ) {
-    result.bloodGroup =
-      profile.bloodGroup;
+    result.bloodGroup = profile.bloodGroup;
   }
 
-  if (
-    privacy.showAllergies
-  ) {
-    result.allergies =
-      profile.allergies;
+  if (privacy.showAllergies) {
+    result.allergies = profile.allergies;
   }
 
-  if (
-    privacy.showMedicalConditions
-  ) {
+  if (privacy.showMedicalConditions) {
     result.medicalConditions =
       profile.medicalConditions;
   }
 
-  if (
-    privacy.showMedications
-  ) {
-    result.medications =
-      profile.medications;
+  if (privacy.showMedications) {
+    result.medications = profile.medications;
   }
 
-  if (
-    privacy.showEmergencyContacts
-  ) {
+  if (privacy.showEmergencyContacts) {
+    // Email addresses are deliberately excluded.
     result.emergencyContacts =
-      profile.emergencyContacts.map(
-        (contact) => ({
-          name:
-            contact.name,
-
-          relationship:
-            contact.relationship,
-
-          phone:
-            contact.phone,
-
-          isPrimary:
-            contact.isPrimary,
-        })
-      );
+      profile.emergencyContacts.map((contact) => ({
+        name: contact.name,
+        relationship: contact.relationship,
+        phone: contact.phone,
+        isPrimary: contact.isPrimary,
+      }));
   }
 
-  if (
-    privacy.showEmergencyInstructions
-  ) {
+  if (privacy.showEmergencyInstructions) {
     result.emergencyInstructions =
       profile.emergencyInstructions;
   }
 
   return result;
 }
-
-// ============================================================
-// AUTHENTICATION
-// ============================================================
 
 function requireVerifiedUser(
   request: {
@@ -446,10 +295,7 @@ function requireVerifiedUser(
     );
   }
 
-  if (
-    request.auth.token.email_verified !==
-    true
-  ) {
+  if (request.auth.token.email_verified !== true) {
     throw new HttpsError(
       "permission-denied",
       "Email verification is required."
@@ -459,19 +305,13 @@ function requireVerifiedUser(
   return request.auth.uid;
 }
 
-// ============================================================
-// QR OWNERSHIP
-// ============================================================
-
 function assertQrOwnership(
   qr: PersonalQr,
   uid: string
 ): void {
   if (
     qr.ownerId !== uid ||
-
     qr.profileId !== uid ||
-
     !validQrId(qr.id)
   ) {
     throw new HttpsError(
@@ -481,25 +321,147 @@ function assertQrOwnership(
   }
 }
 
-// ============================================================
-// FIRESTORE REFERENCES
-// ============================================================
-
-function registryRef(
-  qrId: string
-) {
-  return db.doc(
-    `emergencyQrRegistry/${qrId}`
-  );
+function registryRef(qrId: string) {
+  return db.doc(`emergencyQrRegistry/${qrId}`);
 }
 
-function publicQrRef(
-  qrId: string
-) {
-  return db.doc(
-    `publicEmergencyQrs/${qrId}`
-  );
+function publicQrRef(qrId: string) {
+  return db.doc(`publicEmergencyQrs/${qrId}`);
 }
+
+// ============================================================
+// CREATE AND RESERVE PERSONAL EMERGENCY QR
+// ============================================================
+
+export const createEmergencyQr = onCall(
+  {
+    region: REGION,
+  },
+  async (request) => {
+    const uid = requireVerifiedUser(request);
+
+    const profileRef = db.doc(
+      `emergencyProfiles/${uid}`
+    );
+
+    const qrRef = db.doc(
+      `personalEmergencyQrs/${uid}`
+    );
+
+    const qr = await db.runTransaction(
+      async (tx: Transaction): Promise<PersonalQr> => {
+        const [profileSnap, qrSnap] =
+          await Promise.all([
+            tx.get(profileRef),
+            tx.get(qrRef),
+          ]);
+
+        if (!profileSnap.exists) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Create your emergency profile first."
+          );
+        }
+
+        const profile = profileSnap.data() as Profile;
+
+        if (!validProfile(profile, uid)) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Complete your emergency profile and consent."
+          );
+        }
+
+        // Preserve existing drafts and active QR codes.
+        const existingQr = qrSnap.exists
+          ? (qrSnap.data() as PersonalQr)
+          : null;
+
+        if (existingQr) {
+          assertQrOwnership(existingQr, uid);
+        }
+
+        const qrId = existingQr
+          ? existingQr.id
+          : randomUUID();
+
+        const registry = registryRef(qrId);
+        const publicRef = publicQrRef(qrId);
+
+        // All reads must precede transaction writes.
+        const [registrySnap, publicSnap] =
+          await Promise.all([
+            tx.get(registry),
+            tx.get(publicRef),
+          ]);
+
+        if (registrySnap.exists) {
+          const registryData = registrySnap.data();
+
+          if (
+            registryData?.ownerId !== uid ||
+            registryData?.profileId !== uid ||
+            registryData?.qrId !== qrId
+          ) {
+            throw new HttpsError(
+              "already-exists",
+              "This QR identifier is already assigned."
+            );
+          }
+        }
+
+        if (
+          publicSnap.exists &&
+          (
+            publicSnap.data()?.ownerId !== uid ||
+            publicSnap.data()?.qrId !== qrId
+          )
+        ) {
+          throw new HttpsError(
+            "already-exists",
+            "This QR identifier is already in use."
+          );
+        }
+
+        if (!registrySnap.exists) {
+          tx.create(registry, {
+            qrId,
+            ownerId: uid,
+            profileId: uid,
+            createdAt:
+              FieldValue.serverTimestamp(),
+          });
+        }
+
+        if (existingQr) {
+          return existingQr;
+        }
+
+        const now = new Date().toISOString();
+
+        const newQr: PersonalQr = {
+          id: qrId,
+          ownerId: uid,
+          profileId: uid,
+          status: "DRAFT",
+          createdAt: now,
+          updatedAt: now,
+          activatedAt: null,
+          deactivatedAt: null,
+        };
+
+        tx.create(qrRef, newQr);
+
+        return newQr;
+      }
+    );
+
+    return {
+      success: true,
+      qr,
+    };
+  }
+);
 
 // ============================================================
 // ACTIVATE EMERGENCY QR
@@ -509,10 +471,8 @@ export const activateEmergencyQr = onCall(
   {
     region: REGION,
   },
-
   async (request) => {
-    const uid =
-      requireVerifiedUser(request);
+    const uid = requireVerifiedUser(request);
 
     const profileRef = db.doc(
       `emergencyProfiles/${uid}`
@@ -524,13 +484,11 @@ export const activateEmergencyQr = onCall(
 
     await db.runTransaction(
       async (tx: Transaction) => {
-        const [
-          profileSnap,
-          qrSnap,
-        ] = await Promise.all([
-          tx.get(profileRef),
-          tx.get(qrRef),
-        ]);
+        const [profileSnap, qrSnap] =
+          await Promise.all([
+            tx.get(profileRef),
+            tx.get(qrRef),
+          ]);
 
         if (
           !profileSnap.exists ||
@@ -548,17 +506,9 @@ export const activateEmergencyQr = onCall(
         const qr =
           qrSnap.data() as PersonalQr;
 
-        assertQrOwnership(
-          qr,
-          uid
-        );
+        assertQrOwnership(qr, uid);
 
-        if (
-          !validProfile(
-            profile,
-            uid
-          )
-        ) {
+        if (!validProfile(profile, uid)) {
           throw new HttpsError(
             "failed-precondition",
             "Complete your emergency profile and consent."
@@ -578,36 +528,36 @@ export const activateEmergencyQr = onCall(
           );
         }
 
-        const registry =
-          registryRef(qr.id);
+        const registry = registryRef(qr.id);
+        const publicRef = publicQrRef(qr.id);
 
-        const publicRef =
-          publicQrRef(qr.id);
+        const [registrySnap, publicSnap] =
+          await Promise.all([
+            tx.get(registry),
+            tx.get(publicRef),
+          ]);
 
-        // Complete all transaction reads
-        // before performing any writes.
+        if (registrySnap.exists) {
+          const registryData = registrySnap.data();
 
-        const [
-          registrySnap,
-          publicSnap,
-        ] = await Promise.all([
-          tx.get(registry),
-          tx.get(publicRef),
-        ]);
-
-        if (
-          registrySnap.exists &&
-          registrySnap.data()?.ownerId !== uid
-        ) {
-          throw new HttpsError(
-            "already-exists",
-            "This QR identifier is already assigned."
-          );
+          if (
+            registryData?.ownerId !== uid ||
+            registryData?.profileId !== uid ||
+            registryData?.qrId !== qr.id
+          ) {
+            throw new HttpsError(
+              "already-exists",
+              "This QR identifier is already assigned."
+            );
+          }
         }
 
         if (
           publicSnap.exists &&
-          publicSnap.data()?.ownerId !== uid
+          (
+            publicSnap.data()?.ownerId !== uid ||
+            publicSnap.data()?.qrId !== qr.id
+          )
         ) {
           throw new HttpsError(
             "already-exists",
@@ -615,36 +565,22 @@ export const activateEmergencyQr = onCall(
           );
         }
 
-        // Permanent registry entries
-        // must never be deleted.
-
-        if (
-          !registrySnap.exists
-        ) {
-          tx.create(
-            registry,
-            {
-              qrId:
-                qr.id,
-
-              ownerId:
-                uid,
-
-              profileId:
-                uid,
-
-              createdAt:
-                FieldValue.serverTimestamp(),
-            }
-          );
+        // Also supports legacy drafts that were created
+        // before server-side reservation was introduced.
+        if (!registrySnap.exists) {
+          tx.create(registry, {
+            qrId: qr.id,
+            ownerId: uid,
+            profileId: uid,
+            createdAt:
+              FieldValue.serverTimestamp(),
+          });
         }
 
-        const now =
-          FieldValue.serverTimestamp();
+        const now = FieldValue.serverTimestamp();
 
         tx.set(
           publicRef,
-
           publicProjection(
             profile,
             qr.id,
@@ -652,22 +588,12 @@ export const activateEmergencyQr = onCall(
           )
         );
 
-        tx.update(
-          qrRef,
-          {
-            status:
-              "ACTIVE",
-
-            activatedAt:
-              now,
-
-            deactivatedAt:
-              null,
-
-            updatedAt:
-              now,
-          }
-        );
+        tx.update(qrRef, {
+          status: "ACTIVE",
+          activatedAt: now,
+          deactivatedAt: null,
+          updatedAt: now,
+        });
       }
     );
 
@@ -685,10 +611,8 @@ export const deactivateEmergencyQr = onCall(
   {
     region: REGION,
   },
-
   async (request) => {
-    const uid =
-      requireVerifiedUser(request);
+    const uid = requireVerifiedUser(request);
 
     const qrRef = db.doc(
       `personalEmergencyQrs/${uid}`
@@ -696,12 +620,9 @@ export const deactivateEmergencyQr = onCall(
 
     await db.runTransaction(
       async (tx: Transaction) => {
-        const qrSnap =
-          await tx.get(qrRef);
+        const qrSnap = await tx.get(qrRef);
 
-        if (
-          !qrSnap.exists
-        ) {
+        if (!qrSnap.exists) {
           throw new HttpsError(
             "not-found",
             "Emergency QR not found."
@@ -711,28 +632,24 @@ export const deactivateEmergencyQr = onCall(
         const qr =
           qrSnap.data() as PersonalQr;
 
-        assertQrOwnership(
-          qr,
-          uid
-        );
+        assertQrOwnership(qr, uid);
 
-        const registry =
-          registryRef(qr.id);
+        const registry = registryRef(qr.id);
+        const publicRef = publicQrRef(qr.id);
 
-        const publicRef =
-          publicQrRef(qr.id);
-
-        const [
-          registrySnap,
-          publicSnap,
-        ] = await Promise.all([
-          tx.get(registry),
-          tx.get(publicRef),
-        ]);
+        const [registrySnap, publicSnap] =
+          await Promise.all([
+            tx.get(registry),
+            tx.get(publicRef),
+          ]);
 
         if (
           registrySnap.exists &&
-          registrySnap.data()?.ownerId !== uid
+          (
+            registrySnap.data()?.ownerId !== uid ||
+            registrySnap.data()?.profileId !== uid ||
+            registrySnap.data()?.qrId !== qr.id
+          )
         ) {
           throw new HttpsError(
             "permission-denied",
@@ -750,30 +667,17 @@ export const deactivateEmergencyQr = onCall(
           );
         }
 
-        const now =
-          FieldValue.serverTimestamp();
+        const now = FieldValue.serverTimestamp();
 
-        if (
-          publicSnap.exists
-        ) {
-          tx.delete(
-            publicRef
-          );
+        if (publicSnap.exists) {
+          tx.delete(publicRef);
         }
 
-        tx.update(
-          qrRef,
-          {
-            status:
-              "INACTIVE",
-
-            deactivatedAt:
-              now,
-
-            updatedAt:
-              now,
-          }
-        );
+        tx.update(qrRef, {
+          status: "INACTIVE",
+          deactivatedAt: now,
+          updatedAt: now,
+        });
       }
     );
 
@@ -784,46 +688,35 @@ export const deactivateEmergencyQr = onCall(
 );
 
 // ============================================================
-// SYNCHRONIZE ACTIVE PUBLIC QR WHEN PROFILE CHANGES
+// SYNCHRONIZE PUBLIC QR AFTER PROFILE CHANGES
 // ============================================================
 
 export const syncEmergencyProfile =
   onDocumentWritten(
     {
-      document:
-        "emergencyProfiles/{ownerId}",
-
-      region:
-        REGION,
+      document: "emergencyProfiles/{ownerId}",
+      region: REGION,
     },
-
     async (event) => {
-      const ownerId =
-        event.params.ownerId;
+      const ownerId = event.params.ownerId;
 
-      const profileRef =
-        db.doc(
-          `emergencyProfiles/${ownerId}`
-        );
+      const profileRef = db.doc(
+        `emergencyProfiles/${ownerId}`
+      );
 
-      const qrRef =
-        db.doc(
-          `personalEmergencyQrs/${ownerId}`
-        );
+      const qrRef = db.doc(
+        `personalEmergencyQrs/${ownerId}`
+      );
 
       await db.runTransaction(
         async (tx: Transaction) => {
-          const [
-            profileSnap,
-            qrSnap,
-          ] = await Promise.all([
-            tx.get(profileRef),
-            tx.get(qrRef),
-          ]);
+          const [profileSnap, qrSnap] =
+            await Promise.all([
+              tx.get(profileRef),
+              tx.get(qrRef),
+            ]);
 
-          if (
-            !qrSnap.exists
-          ) {
+          if (!qrSnap.exists) {
             return;
           }
 
@@ -832,57 +725,43 @@ export const syncEmergencyProfile =
 
           if (
             qr.ownerId !== ownerId ||
-
             qr.profileId !== ownerId ||
-
             !validQrId(qr.id)
           ) {
             return;
           }
 
-          const registry =
-            registryRef(qr.id);
+          const registry = registryRef(qr.id);
+          const publicRef = publicQrRef(qr.id);
 
-          const publicRef =
-            publicQrRef(qr.id);
-
-          const [
-            registrySnap,
-            publicSnap,
-          ] = await Promise.all([
-            tx.get(registry),
-            tx.get(publicRef),
-          ]);
+          const [registrySnap, publicSnap] =
+            await Promise.all([
+              tx.get(registry),
+              tx.get(publicRef),
+            ]);
 
           if (
             !registrySnap.exists ||
-
-            registrySnap.data()?.ownerId !==
-              ownerId
+            registrySnap.data()?.ownerId !== ownerId ||
+            registrySnap.data()?.profileId !== ownerId ||
+            registrySnap.data()?.qrId !== qr.id
           ) {
             return;
           }
 
           if (
             publicSnap.exists &&
-
-            publicSnap.data()?.ownerId !==
-              ownerId
+            publicSnap.data()?.ownerId !== ownerId
           ) {
             return;
           }
 
           if (
             !profileSnap.exists ||
-
             qr.status !== "ACTIVE"
           ) {
-            if (
-              publicSnap.exists
-            ) {
-              tx.delete(
-                publicRef
-              );
+            if (publicSnap.exists) {
+              tx.delete(publicRef);
             }
 
             return;
@@ -891,18 +770,9 @@ export const syncEmergencyProfile =
           const profile =
             profileSnap.data() as Profile;
 
-          if (
-            !validProfile(
-              profile,
-              ownerId
-            )
-          ) {
-            if (
-              publicSnap.exists
-            ) {
-              tx.delete(
-                publicRef
-              );
+          if (!validProfile(profile, ownerId)) {
+            if (publicSnap.exists) {
+              tx.delete(publicRef);
             }
 
             return;
@@ -910,7 +780,6 @@ export const syncEmergencyProfile =
 
           tx.set(
             publicRef,
-
             publicProjection(
               profile,
               qr.id,
@@ -921,6 +790,11 @@ export const syncEmergencyProfile =
       );
     }
   );
-  export {
+
+export {
   notifyEmergencyContacts,
 } from "./notifyEmergencyContacts";
+
+export {
+  deleteEmergencyQr,
+} from "./deleteEmergencyQr";

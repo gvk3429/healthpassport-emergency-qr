@@ -1,27 +1,9 @@
 
-import {
-  useEffect,
-  useState,
-} from "react";
-
-import {
-  Link,
-  useParams,
-} from "react-router-dom";
-
-import {
-  doc,
-  getDoc,
-} from "firebase/firestore";
-
-import {
-  httpsCallable,
-} from "firebase/functions";
-
-import {
-  db,
-  functions,
-} from "../lib/firebase";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { doc, getDoc } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "../lib/firebase";
 
 type EmergencyContact = {
   name: string;
@@ -50,11 +32,31 @@ type ScannerLocation = {
   accuracy: number;
 };
 
+type NotificationRequest = {
+  qrId: string;
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number;
+  message: string;
+};
+
 type NotificationResponse = {
   success: boolean;
   acceptedCount: number;
+  recipientCount: number;
+  partialSuccess: boolean;
   message: string;
 };
+
+type NotificationState =
+  | "idle"
+  | "sending"
+  | "accepted"
+  | "uncertain"
+  | "failed";
+
+const QR_PATTERN = /^[A-Za-z0-9_-]{20,100}$/;
+const NOTIFICATION_TIMEOUT_MS = 45000;
 
 function DetailList({
   title,
@@ -73,34 +75,92 @@ function DetailList({
 
       <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-700">
         {values.map((value, index) => (
-          <li key={`${index}-${value}`}>
-            {value}
-          </li>
+          <li key={`${index}-${value}`}>{value}</li>
         ))}
       </ul>
     </section>
   );
 }
 
-function errorMessage(error: unknown): string {
+function firebaseErrorCode(error: unknown): string {
   if (
     error &&
     typeof error === "object" &&
     "code" in error &&
-    error.code === "functions/resource-exhausted"
+    typeof error.code === "string"
   ) {
-    return (
-      "A notification was recently requested. " +
-      "Please call an emergency contact directly " +
-      "or try again after 15 minutes."
-    );
+    return error.code;
   }
 
-  if (error instanceof Error) {
-    return error.message;
+  return "";
+}
+
+function notificationError(error: unknown): {
+  message: string;
+  uncertain: boolean;
+} {
+  const code = firebaseErrorCode(error);
+
+  if (code === "functions/resource-exhausted") {
+    return {
+      message:
+        "A notification was recently requested. " +
+        "Please call an emergency contact directly. " +
+        "Another request may be possible after 15 minutes.",
+      uncertain: false,
+    };
   }
 
-  return "Unable to send the notification.";
+  if (code === "functions/failed-precondition") {
+    return {
+      message:
+        "This emergency QR or its notification settings " +
+        "are unavailable. Call an emergency contact directly.",
+      uncertain: false,
+    };
+  }
+
+  if (code === "functions/invalid-argument") {
+    return {
+      message:
+        "The notification request was invalid. " +
+        "Please refresh the page and try again.",
+      uncertain: false,
+    };
+  }
+
+  if (code === "functions/unavailable") {
+    return {
+      message:
+        "The email service could not accept the notification. " +
+        "Call an emergency contact directly.",
+      uncertain: false,
+    };
+  }
+
+  if (
+    code === "functions/deadline-exceeded" ||
+    code === "functions/internal" ||
+    code === "functions/unknown" ||
+    code === "functions/cancelled" ||
+    code === "functions/network-request-failed"
+  ) {
+    return {
+      message:
+        "The notification result could not be confirmed. " +
+        "Some emails may already have been accepted. " +
+        "Call an emergency contact directly rather than " +
+        "repeatedly submitting the request.",
+      uncertain: true,
+    };
+  }
+
+  return {
+    message:
+      "The notification result could not be confirmed. " +
+      "Call an emergency contact directly.",
+    uncertain: true,
+  };
 }
 
 export default function EmergencyPage() {
@@ -110,30 +170,37 @@ export default function EmergencyPage() {
     useState<PublicEmergencyData | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [location, setLocation] =
     useState<ScannerLocation | null>(null);
 
   const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
+
   const [message, setMessage] = useState("");
-  const [sending, setSending] = useState(false);
+  const [notificationState, setNotificationState] =
+    useState<NotificationState>("idle");
+
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [sent, setSent] = useState(false);
+
+  // A ref prevents rapid duplicate submissions before React
+  // has committed its next state update.
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setLoading(true);
+      setLoadError("");
       setUnavailable(false);
       setData(null);
 
-      if (
-        !qrId ||
-        !/^[A-Za-z0-9_-]{20,100}$/.test(qrId)
-      ) {
+      if (!qrId || !QR_PATTERN.test(qrId)) {
         setUnavailable(true);
         setLoading(false);
         return;
@@ -165,7 +232,10 @@ export default function EmergencyPage() {
         setData(profile);
       } catch {
         if (!cancelled) {
-          setUnavailable(true);
+          setLoadError(
+            "Unable to load emergency information. " +
+            "Check your internet connection and try again."
+          );
         }
       } finally {
         if (!cancelled) {
@@ -179,16 +249,18 @@ export default function EmergencyPage() {
     return () => {
       cancelled = true;
     };
-  }, [qrId]);
+  }, [qrId, reloadKey]);
 
-  function captureLocation() {
-    setError("");
-    setNotice("");
+  const captureLocation = useCallback(() => {
+    if (locating || submittingRef.current) return;
+
+    setLocationError("");
     setLocation(null);
 
     if (!navigator.geolocation) {
-      setError(
-        "Location sharing is not supported on this device."
+      setLocationError(
+        "GPS is not supported on this device. " +
+        "You can still notify emergency contacts without location."
       );
       return;
     }
@@ -197,19 +269,54 @@ export default function EmergencyPage() {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        const { latitude, longitude, accuracy } =
+          position.coords;
+
+        if (
+          !Number.isFinite(latitude) ||
+          !Number.isFinite(longitude) ||
+          !Number.isFinite(accuracy) ||
+          latitude < -90 ||
+          latitude > 90 ||
+          longitude < -180 ||
+          longitude > 180 ||
+          accuracy < 0 ||
+          accuracy > 100000
+        ) {
+          setLocationError(
+            "Your device returned invalid GPS data. " +
+            "You can notify contacts without location."
+          );
+          setLocating(false);
+          return;
+        }
+
         setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
+          latitude,
+          longitude,
+          accuracy,
         });
 
         setLocating(false);
       },
-      () => {
-        setError(
-          "Unable to obtain your location. " +
-          "Enable location permission and try again."
+      (geoError) => {
+        let description =
+          "Unable to obtain your GPS location.";
+
+        if (geoError.code === 1) {
+          description = "Location permission was denied.";
+        } else if (geoError.code === 2) {
+          description =
+            "Your device could not determine its location.";
+        } else if (geoError.code === 3) {
+          description = "The GPS request timed out.";
+        }
+
+        setLocationError(
+          description +
+            " You can retry or notify contacts without GPS."
         );
+
         setLocating(false);
       },
       {
@@ -218,58 +325,82 @@ export default function EmergencyPage() {
         maximumAge: 0,
       }
     );
-  }
+  }, [locating]);
 
   async function sendNotification() {
     if (
       !qrId ||
       !data ||
-      !location ||
-      sending ||
-      sent
+      submittingRef.current ||
+      notificationState !== "idle" ||
+      locating
     ) {
       return;
     }
 
-    setSending(true);
+    submittingRef.current = true;
+
+    setNotificationState("sending");
     setError("");
     setNotice("");
 
+    const payload: NotificationRequest = {
+      qrId,
+      message: message.trim(),
+    };
+
+    if (location) {
+      payload.latitude = location.latitude;
+      payload.longitude = location.longitude;
+      payload.accuracy = location.accuracy;
+    }
+
     try {
       const notify = httpsCallable<
-        {
-          qrId: string;
-          latitude: number;
-          longitude: number;
-          accuracy: number;
-          message: string;
-        },
+        NotificationRequest,
         NotificationResponse
       >(
         functions,
-        "notifyEmergencyContacts"
+        "notifyEmergencyContacts",
+        {
+          timeout: NOTIFICATION_TIMEOUT_MS,
+        }
       );
 
-      const result = await notify({
-        qrId,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        accuracy: location.accuracy,
-        message: message.trim(),
-      });
+      const result = await notify(payload);
 
       if (!result.data.success) {
-        throw new Error(
-          "The notification was not accepted."
+        setNotificationState("uncertain");
+        setError(
+          "The notification result could not be confirmed. " +
+          "Call an emergency contact directly."
         );
+        return;
       }
 
-      setSent(true);
-      setNotice(result.data.message);
+      setNotificationState("accepted");
+
+      if (result.data.partialSuccess) {
+        setNotice(
+          "Partial success: the email service accepted " +
+          `${result.data.acceptedCount} of ` +
+          `${result.data.recipientCount} notifications. ` +
+          "Some contacts may not receive an email. " +
+          "Call emergency contacts directly as well."
+        );
+      } else {
+        setNotice(result.data.message);
+      }
     } catch (err) {
-      setError(errorMessage(err));
+      const result = notificationError(err);
+
+      setNotificationState(
+        result.uncertain ? "uncertain" : "failed"
+      );
+
+      setError(result.message);
     } finally {
-      setSending(false);
+      submittingRef.current = false;
     }
   }
 
@@ -279,6 +410,11 @@ export default function EmergencyPage() {
         `${location.latitude},${location.longitude}`
       )
     : "";
+
+  const sending = notificationState === "sending";
+  const sent = notificationState === "accepted";
+  const uncertain = notificationState === "uncertain";
+  const failed = notificationState === "failed";
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
@@ -307,8 +443,8 @@ export default function EmergencyPage() {
 
           <p className="mt-2 text-sm text-red-800">
             Contact emergency services immediately.
-            Do not delay medical assistance while
-            using this page.
+            Do not delay medical assistance while using
+            this page.
           </p>
 
           <a
@@ -328,6 +464,29 @@ export default function EmergencyPage() {
           </section>
         )}
 
+        {!loading && loadError && (
+          <section
+            role="alert"
+            className="rounded-xl border bg-white p-8 text-center"
+          >
+            <h2 className="text-xl font-bold">
+              Connection problem
+            </h2>
+
+            <p className="mt-3 text-slate-600">
+              {loadError}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setReloadKey((key) => key + 1)}
+              className="mt-5 rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white"
+            >
+              Retry loading
+            </button>
+          </section>
+        )}
+
         {!loading && unavailable && (
           <section
             role="alert"
@@ -338,8 +497,7 @@ export default function EmergencyPage() {
             </h2>
 
             <p className="mt-3 text-slate-600">
-              This QR may be invalid, inactive or
-              temporarily unavailable.
+              This QR may be invalid or inactive.
             </p>
           </section>
         )}
@@ -466,19 +624,21 @@ export default function EmergencyPage() {
               </h2>
 
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Share your device's current GPS
-                coordinates and an optional message
-                with this person's registered
-                emergency contacts by email.
-                Your location is requested only
-                when you choose to share it.
+                Request an email notification to this
+                person's registered emergency contacts.
+                Sharing your GPS location is optional.
               </p>
 
               <button
                 type="button"
                 onClick={captureLocation}
-                disabled={locating || sending || sent}
-                className="mt-5 w-full rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
+                disabled={
+                  locating ||
+                  sending ||
+                  sent ||
+                  uncertain
+                }
+                className="mt-5 w-full rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white disabled:opacity-50"
               >
                 {locating
                   ? "Getting your location..."
@@ -486,6 +646,15 @@ export default function EmergencyPage() {
                     ? "Refresh my GPS location"
                     : "Share my GPS location"}
               </button>
+
+              {locationError && (
+                <p
+                  role="alert"
+                  className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+                >
+                  {locationError}
+                </p>
+              )}
 
               {location && (
                 <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
@@ -512,7 +681,24 @@ export default function EmergencyPage() {
                   >
                     Preview location in Google Maps
                   </a>
+
+                  {!sending && !sent && !uncertain && (
+                    <button
+                      type="button"
+                      onClick={() => setLocation(null)}
+                      className="mt-3 block text-sm font-semibold text-slate-600 underline"
+                    >
+                      Remove shared location
+                    </button>
+                  )}
                 </div>
+              )}
+
+              {!location && !locating && (
+                <p className="mt-3 text-sm text-slate-600">
+                  No GPS location selected. You can still
+                  notify emergency contacts.
+                </p>
               )}
 
               <label className="mt-5 block">
@@ -523,7 +709,7 @@ export default function EmergencyPage() {
                 <textarea
                   rows={4}
                   maxLength={500}
-                  disabled={sending || sent}
+                  disabled={sending || sent || uncertain}
                   value={message}
                   onChange={(event) =>
                     setMessage(event.target.value)
@@ -551,29 +737,40 @@ export default function EmergencyPage() {
                 </p>
               )}
 
+              {uncertain && (
+                <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                  Do not assume the email failed or succeeded.
+                  The request may have reached the server.
+                  Call emergency contacts directly.
+                </p>
+              )}
+
               <button
                 type="button"
                 onClick={() => void sendNotification()}
                 disabled={
-                  !location ||
                   locating ||
                   sending ||
-                  sent
+                  sent ||
+                  uncertain
                 }
-                className="mt-5 w-full rounded-lg bg-green-700 px-5 py-4 font-bold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-5 w-full rounded-lg bg-green-700 px-5 py-4 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {sending
-                  ? "Sending notification..."
+                  ? "Requesting notification..."
                   : sent
                     ? "Notification accepted"
-                    : "Notify Emergency Contacts"}
+                    : failed
+                      ? "Retry notification"
+                      : "Notify Emergency Contacts"}
               </button>
 
               <p className="mt-3 text-xs leading-5 text-slate-500">
-                This sends an email request; it does
-                not contact emergency services.
-                Email delivery may be delayed.
-                Your GPS location may differ from
+                This sends an email request; it does not
+                contact emergency services. Email delivery
+                may be delayed or unsuccessful. GPS
+                coordinates, when shared, come from the
+                scanner's device and may not represent
                 the patient's exact location.
               </p>
             </section>
