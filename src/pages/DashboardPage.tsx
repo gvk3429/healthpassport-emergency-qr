@@ -142,6 +142,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [referral, setReferral] = useState<ReferralSummary | null>(null);
   const [referralLoading, setReferralLoading] = useState(true);
+  const [referralLoadFailed, setReferralLoadFailed] = useState(false);
   const [copyMessage, setCopyMessage] = useState("");
 
   const displayName =
@@ -152,11 +153,13 @@ export default function DashboardPage() {
   const loadReferralSummary = useCallback(async () => {
     if (!user?.emailVerified) {
       setReferral(null);
+      setReferralLoadFailed(false);
       setReferralLoading(false);
       return;
     }
 
     setReferralLoading(true);
+    setReferralLoadFailed(false);
 
     try {
       const result = await getReferralDashboardSummary({});
@@ -164,6 +167,7 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Unable to load referral summary:", err);
       setReferral(null);
+      setReferralLoadFailed(true);
     } finally {
       setReferralLoading(false);
     }
@@ -238,8 +242,6 @@ export default function DashboardPage() {
 
     try {
       if (typeof navigator.share === "function") {
-        // On supported mobile browsers, this opens the device's native
-        // share sheet with compatible apps installed on the user's phone.
         await navigator.share({
           title: "HealthPassport Emergency QR",
           text: shareText,
@@ -519,16 +521,32 @@ export default function DashboardPage() {
                     {referral.verifiedReferrals}
                   </p>
 
-                  <p className="mt-1 text-sm leading-5 text-slate-600">
-                    Counts accounts whose referral attribution has been
-                    verified. Pending registrations are not counted.
-                  </p>
+                  {referral.verifiedReferrals === 0 ? (
+                    <div className="mt-3 rounded-lg border border-blue-100 bg-white p-3">
+                      <p className="text-sm font-semibold text-[#142d50]">
+                        Your referral journey starts here!
+                      </p>
+
+                      <p className="mt-1 text-sm leading-5 text-slate-600">
+                        You haven't referred anyone yet. Share your referral
+                        code with friends and family to invite them to
+                        HealthPassport Emergency QR. Your verified referrals
+                        will appear here once they join successfully.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm leading-5 text-slate-600">
+                      Counts accounts whose referral attribution has been
+                      verified. Pending registrations are not counted.
+                    </p>
+                  )}
                 </div>
               </div>
-            ) : (
+            ) : referralLoadFailed ? (
               <div>
                 <p className="text-sm text-slate-600">
-                  Your referral details could not be loaded.
+                  We couldn't load your referral details right now. Please
+                  check your connection and try again.
                 </p>
 
                 <button
@@ -539,6 +557,10 @@ export default function DashboardPage() {
                   Try again
                 </button>
               </div>
+            ) : (
+              <p className="text-sm text-slate-600">
+                Your referral details are not available yet.
+              </p>
             )}
           </div>
         </section>
