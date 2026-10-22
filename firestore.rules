@@ -38,7 +38,6 @@ service cloud.firestore {
 
     function validPrivacy(privacy) {
       return privacy is map
-
         && privacy.keys().hasAll([
           'showPhoto',
           'showDateOfBirth',
@@ -49,7 +48,6 @@ service cloud.firestore {
           'showEmergencyContacts',
           'showEmergencyInstructions'
         ])
-
         && privacy.keys().hasOnly([
           'showPhoto',
           'showDateOfBirth',
@@ -60,7 +58,6 @@ service cloud.firestore {
           'showEmergencyContacts',
           'showEmergencyInstructions'
         ])
-
         && privacy.showPhoto is bool
         && privacy.showDateOfBirth is bool
         && privacy.showBloodGroup is bool
@@ -95,7 +92,6 @@ service cloud.firestore {
           'createdAt',
           'updatedAt'
         ])
-
         && data.keys().hasOnly([
           'ownerId',
           'fullName',
@@ -113,19 +109,14 @@ service cloud.firestore {
           'createdAt',
           'updatedAt'
         ])
-
         && data.ownerId == ownerId
-
         && data.fullName is string
         && data.fullName.size() > 0
         && data.fullName.size() <= 120
-
         && data.photoUrl is string
         && data.photoUrl.size() <= 2048
-
         && data.dateOfBirth is string
         && data.dateOfBirth.size() <= 10
-
         && data.bloodGroup in [
           'Unknown',
           'A+', 'A-',
@@ -133,27 +124,19 @@ service cloud.firestore {
           'AB+', 'AB-',
           'O+', 'O-'
         ]
-
         && data.allergies is list
         && data.allergies.size() <= 30
-
         && data.medicalConditions is list
         && data.medicalConditions.size() <= 30
-
         && data.medications is list
         && data.medications.size() <= 30
-
         && data.emergencyContacts is list
         && data.emergencyContacts.size() >= 1
         && data.emergencyContacts.size() <= 10
-
         && data.emergencyInstructions is string
         && data.emergencyInstructions.size() <= 2000
-
         && validPrivacy(data.privacy)
-
         && data.consentGiven is bool
-
         && isoDate(data.consentUpdatedAt)
         && isoDate(data.createdAt)
         && isoDate(data.updatedAt);
@@ -164,9 +147,7 @@ service cloud.firestore {
     // =====================================================
 
     match /emergencyProfiles/{ownerId} {
-
       allow get: if isOwner(ownerId);
-
       allow list: if false;
 
       allow create: if isOwner(ownerId)
@@ -174,23 +155,16 @@ service cloud.firestore {
         && request.resource.data.consentGiven == true;
 
       allow update: if isOwner(ownerId)
-
         && resource.data.ownerId == ownerId
-
         && validProfile(ownerId)
-
         && request.resource.data.createdAt
           == resource.data.createdAt
-
         && request.resource.data.updatedAt
           > resource.data.updatedAt
-
         && (
           request.resource.data.consentGiven
             == resource.data.consentGiven
-
           ||
-
           request.resource.data.consentUpdatedAt
             != resource.data.consentUpdatedAt
         );
@@ -203,23 +177,14 @@ service cloud.firestore {
     // =====================================================
 
     match /personalEmergencyQrs/{ownerId} {
-
-      // Verified owners may read their own QR.
       allow get: if isOwner(ownerId);
-
-      // Prevent QR enumeration.
       allow list: if false;
 
-      // Draft creation now requires createEmergencyQr.
-      // The Cloud Function atomically reserves the ID
-      // in the permanent ownership registry.
+      // Creation and activation are backend-only.
       allow create: if false;
-
-      // Activation and deactivation are backend-only.
       allow update: if false;
 
-      // An owner may delete only an unactivated draft.
-      // The registry reservation remains permanent.
+      // Only unactivated drafts can be deleted by their owner.
       allow delete: if isOwner(ownerId)
         && resource.data.status == 'DRAFT';
     }
@@ -230,24 +195,19 @@ service cloud.firestore {
 
     function currentPublicQr(qrId) {
       return resource.data.ownerId is string
-
         && resource.data.status == 'ACTIVE'
-
         && resource.data.qrId == qrId
 
         && exists(
           /databases/$(database)/documents/emergencyProfiles/$(resource.data.ownerId)
         )
-
         && exists(
           /databases/$(database)/documents/personalEmergencyQrs/$(resource.data.ownerId)
         )
-
         && exists(
           /databases/$(database)/documents/emergencyQrRegistry/$(qrId)
         )
 
-        // Profile ownership, consent and freshness.
         && get(
           /databases/$(database)/documents/emergencyProfiles/$(resource.data.ownerId)
         ).data.ownerId == resource.data.ownerId
@@ -260,7 +220,6 @@ service cloud.firestore {
           /databases/$(database)/documents/emergencyProfiles/$(resource.data.ownerId)
         ).data.updatedAt == resource.data.sourceUpdatedAt
 
-        // The personal QR must still be active.
         && get(
           /databases/$(database)/documents/personalEmergencyQrs/$(resource.data.ownerId)
         ).data.ownerId == resource.data.ownerId
@@ -277,7 +236,6 @@ service cloud.firestore {
           /databases/$(database)/documents/personalEmergencyQrs/$(resource.data.ownerId)
         ).data.status == 'ACTIVE'
 
-        // Verify permanent registry ownership.
         && get(
           /databases/$(database)/documents/emergencyQrRegistry/$(qrId)
         ).data.ownerId == resource.data.ownerId
@@ -296,14 +254,8 @@ service cloud.firestore {
     // =====================================================
 
     match /publicEmergencyQrs/{qrId} {
-
-      // Anonymous scanners can read only valid,
-      // currently active public QR projections.
       allow get: if currentPublicQr(qrId);
-
       allow list: if false;
-
-      // Only backend functions can publish or remove QRs.
       allow create, update, delete: if false;
     }
 
@@ -312,9 +264,129 @@ service cloud.firestore {
     // =====================================================
 
     match /emergencyQrRegistry/{qrId} {
-
-      // Registry access is restricted to the Admin SDK.
       allow read, write: if false;
+    }
+
+    // =====================================================
+    // PRIVATE ACCOUNT REGISTRATION DETAILS
+    // =====================================================
+
+    match /userAccounts/{uid} {
+      allow get: if signedIn()
+        && request.auth.uid == uid;
+
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll([
+          'uid',
+          'firstName',
+          'lastName',
+          'fullName',
+          'email',
+          'mobileCountryCode',
+          'mobileNumber',
+          'mobileVerified',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'firstName',
+          'lastName',
+          'fullName',
+          'email',
+          'mobileCountryCode',
+          'mobileNumber',
+          'mobileVerified',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.firstName is string
+        && request.resource.data.firstName.size() > 0
+        && request.resource.data.firstName.size() <= 60
+        && request.resource.data.lastName is string
+        && request.resource.data.lastName.size() > 0
+        && request.resource.data.lastName.size() <= 60
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() > 0
+        && request.resource.data.fullName.size() <= 121
+        && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.mobileCountryCode is string
+        && request.resource.data.mobileCountryCode.matches(
+          '^\\+[1-9][0-9]{0,3}$'
+        )
+        // Store the national number without the country code.
+        && request.resource.data.mobileNumber is string
+        && request.resource.data.mobileNumber.matches(
+          '^[0-9]{6,14}$'
+        )
+        && request.resource.data.mobileVerified == false
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll([
+          'uid',
+          'firstName',
+          'lastName',
+          'fullName',
+          'email',
+          'mobileCountryCode',
+          'mobileNumber',
+          'mobileVerified',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'firstName',
+          'lastName',
+          'fullName',
+          'email',
+          'mobileCountryCode',
+          'mobileNumber',
+          'mobileVerified',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.mobileVerified == resource.data.mobileVerified
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'firstName',
+            'lastName',
+            'fullName',
+            'mobileCountryCode',
+            'mobileNumber',
+            'updatedAt'
+          ])
+        && request.resource.data.firstName is string
+        && request.resource.data.firstName.size() > 0
+        && request.resource.data.firstName.size() <= 60
+        && request.resource.data.lastName is string
+        && request.resource.data.lastName.size() > 0
+        && request.resource.data.lastName.size() <= 60
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() > 0
+        && request.resource.data.fullName.size() <= 121
+        && request.resource.data.mobileCountryCode is string
+        && request.resource.data.mobileCountryCode.matches(
+          '^\\+[1-9][0-9]{0,3}$'
+        )
+        && request.resource.data.mobileNumber is string
+        && request.resource.data.mobileNumber.matches(
+          '^[0-9]{6,14}$'
+        )
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
     }
 
     // =====================================================
