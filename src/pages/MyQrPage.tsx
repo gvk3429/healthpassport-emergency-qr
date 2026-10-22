@@ -57,7 +57,7 @@ export default function MyQrPage() {
     useState<EmergencyQr | null>(null);
 
   const [loading, setLoading] =
-    useState(true);
+    useState(false);
 
   const [busy, setBusy] =
     useState(false);
@@ -81,13 +81,12 @@ export default function MyQrPage() {
     setQr(savedQr);
   }, [uid]);
 
-  useEffect(() => {
-    if (!uid) {
-      setLoading(false);
-      return;
-    }
+ useEffect(() => {
+  if (!uid) {
+    return;
+  }
 
-    let cancelled = false;
+  let cancelled = false;
 
     async function initialLoad() {
       setLoading(true);

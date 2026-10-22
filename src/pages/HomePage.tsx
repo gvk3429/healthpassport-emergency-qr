@@ -23,8 +23,8 @@ function ArrowIcon() {
 function ShieldIcon() {
   return (
     <svg
-      width="22"
-      height="22"
+      width="20"
+      height="20"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -44,13 +44,13 @@ const steps = [
     number: "01",
     title: "Create your profile",
     description:
-      "Add your emergency information and decide which details can be viewed publicly.",
+      "Add your emergency information and choose which details can be viewed publicly.",
   },
   {
     number: "02",
     title: "Activate your QR",
     description:
-      "Generate your personal QR and place it on a card or another accessible item.",
+      "Create your personal Emergency QR and keep it accessible when needed.",
   },
   {
     number: "03",
@@ -62,30 +62,25 @@ const steps = [
 
 export default function HomePage() {
   const { user } = useAuth();
-
-  const primaryDestination = user
-    ? "/dashboard"
-    : "/register";
+  const primaryDestination = user ? "/dashboard" : "/register";
 
   return (
-    <main className="min-h-screen bg-[#f7f9fd] text-slate-900">
-      <header className="border-b border-slate-200/80 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
+    <main className="min-h-screen bg-[#f7f9fd] text-[#142d50]">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           <Link
             to="/"
-            className="flex items-center gap-3"
+            className="flex min-w-0 items-center gap-2.5"
             aria-label="HealthPassport home"
           >
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#143d75] text-xl font-extrabold text-white">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#143d75] text-lg font-extrabold text-white">
               H
             </span>
-
-            <span>
-              <span className="block text-base font-extrabold tracking-tight text-[#142d50]">
+            <span className="min-w-0">
+              <span className="block text-sm font-extrabold tracking-tight">
                 HealthPassport
               </span>
-
-              <span className="block text-xs font-medium text-slate-500">
+              <span className="block text-xs text-slate-500">
                 Emergency QR
               </span>
             </span>
@@ -93,27 +88,18 @@ export default function HomePage() {
 
           <nav
             aria-label="Main navigation"
-            className="flex items-center gap-2 sm:gap-3"
+            className="flex shrink-0 items-center gap-2"
           >
             {user ? (
-              <Link
-                to="/dashboard"
-                className="rounded-xl bg-[#185abc] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#124a9e]"
-              >
+              <Link to="/dashboard" className="hp-btn-primary">
                 Dashboard
               </Link>
             ) : (
               <>
-                <Link
-                  to="/login"
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-[#183657] transition hover:bg-slate-50"
-                >
+                <Link to="/login" className="hp-btn-secondary">
                   Log in
                 </Link>
-
-                <Link
-                  to="/register"
-className="rounded-xl bg-[#185abc] px-4 py-2.5 text-sm font-bold !text-white shadow-sm transition hover:bg-[#124a9e] hover:!text-white"                >
+                <Link to="/register" className="hp-btn-primary">
                   Register
                 </Link>
               </>
@@ -124,195 +110,180 @@ className="rounded-xl bg-[#185abc] px-4 py-2.5 text-sm font-bold !text-white sha
 
       <section className="relative overflow-hidden">
         <div
-          className="pointer-events-none absolute -right-32 -top-40 h-[500px] w-[500px] rounded-full bg-blue-100/60 blur-3xl"
+          className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-blue-100/60 blur-3xl"
           aria-hidden="true"
         />
 
-        <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 py-16 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-20 lg:py-24">
+        <div className="relative mx-auto grid max-w-7xl items-center gap-8 px-4 py-8 sm:px-6 sm:py-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-12 lg:py-14">
           <div>
-            <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-[#185abc]">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#185abc]">
               <ShieldIcon />
               Emergency identification
             </div>
 
-            <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.12] tracking-tight text-[#142d50] sm:text-5xl lg:text-[3.65rem]">
+            <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
               Your medical information.
-              <span className="mt-2 block text-[#185abc]">
+              <span className="mt-1 block text-[#185abc]">
                 Available when it matters.
               </span>
             </h1>
 
-            <p className="mt-7 max-w-xl text-base leading-8 text-slate-600 sm:text-lg">
-              Create a personal Emergency QR that gives
-              responders access to the essential medical
-              details and emergency contacts you choose
-              to share.
+            <p className="mt-4 max-w-xl text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
+              Create a personal Emergency QR that gives responders
+              access to essential medical details and emergency
+              contacts you choose to share.
             </p>
 
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
               <Link
                 to={primaryDestination}
-                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-xl bg-[#185abc] px-7 py-4 text-base font-bold text-white shadow-lg shadow-blue-900/10 transition hover:bg-[#124a9e] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-700"
+                className="hp-btn-primary gap-2"
               >
-                Create your Emergency QR
+                {user ? "Open dashboard" : "Get started"}
                 <ArrowIcon />
               </Link>
 
-              <a
-                href="#how-it-works"
-                className="inline-flex min-h-14 items-center justify-center rounded-xl border border-slate-300 bg-white px-7 py-4 text-base font-semibold text-[#183657] transition hover:border-blue-300 hover:bg-blue-50"
-              >
-                See how it works
-              </a>
+              {!user && (
+                <Link to="/login" className="hp-btn-secondary">
+                  Already registered? Log in
+                </Link>
+              )}
             </div>
 
-            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-slate-600">
-              <span className="flex items-center gap-2">
-                <span className="font-bold text-green-700">
-                  ✓
-                </span>
-                You control what is shared
+            <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-slate-600 sm:text-sm">
+              <span className="inline-flex items-center gap-2">
+                <span className="text-emerald-600">✓</span>
+                No app required for responders
               </span>
-
-              <span className="flex items-center gap-2">
-                <span className="font-bold text-green-700">
-                  ✓
-                </span>
-                No scanner app required
+              <span className="inline-flex items-center gap-2">
+                <span className="text-emerald-600">✓</span>
+                You control shared information
               </span>
             </div>
           </div>
 
-          <div className="mx-auto w-full max-w-[460px]">
-            <div className="rounded-[30px] border border-blue-100 bg-white p-4 shadow-2xl shadow-[#143d75]/10 sm:p-6">
-              <div className="mb-5 flex items-center justify-between gap-3">
-                <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#185abc]">
-                  Emergency profile
-                </span>
-
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  Example preview
-                </span>
-              </div>
-
-              <div className="flex items-center gap-4 border-b border-slate-100 pb-6">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-2xl font-extrabold text-[#185abc]">
-                  P
-                </div>
-
+          <div className="mx-auto w-full max-w-md">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/60 sm:p-5">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Patient information
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#185abc]">
+                    Emergency readiness
                   </p>
-
-                  <h2 className="mt-1 text-xl font-extrabold text-[#142d50]">
-                    Patient Name
+                  <h2 className="mt-1 text-xl font-extrabold">
+                    Your essential details
                   </h2>
-
                   <p className="mt-1 text-sm text-slate-500">
-                    Personal Emergency QR
+                    Information for emergency situations
                   </p>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 py-6">
-                <div className="rounded-2xl bg-[#f2f6fc] p-5">
-                  <p className="text-xs font-medium text-slate-500">
-                    Blood group
-                  </p>
-
-                  <p className="mt-2 text-2xl font-extrabold text-[#142d50]">
-                    O+
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-[#f2f6fc] p-5">
-                  <p className="text-xs font-medium text-slate-500">
-                    Allergies
-                  </p>
-
-                  <p className="mt-2 text-xl font-extrabold text-[#142d50]">
-                    None reported
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="rounded-xl bg-[#dc2635] px-5 py-4 text-center text-sm font-bold text-white">
-                  Call emergency services
-                </div>
-
-                <div className="rounded-xl border border-slate-200 px-5 py-4 text-center text-sm font-semibold text-[#183657]">
-                  Notify emergency contacts
-                </div>
-
-                <div className="rounded-xl border border-slate-200 px-5 py-4 text-center text-sm font-semibold text-[#183657]">
-                  Share emergency location
-                </div>
-              </div>
-
-              <p className="mt-5 text-center text-xs leading-5 text-slate-500">
-                Illustrative preview. Contact notifications
-                and location sharing are upcoming features.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        id="how-it-works"
-        className="scroll-mt-10 border-t border-slate-200 bg-white py-16 sm:py-20"
-      >
-        <div className="mx-auto max-w-7xl px-5 sm:px-8">
-          <div className="max-w-2xl">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#185abc]">
-              Simple by design
-            </p>
-
-            <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-[#142d50] sm:text-4xl">
-              How HealthPassport works
-            </h2>
-
-            <p className="mt-4 leading-7 text-slate-600">
-              Three steps to make your selected emergency
-              information accessible when needed.
-            </p>
-          </div>
-
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
-            {steps.map((step) => (
-              <div
-                key={step.number}
-                className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm"
-              >
-                <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-sm font-extrabold text-[#185abc]">
-                  {step.number}
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#185abc]">
+                  <ShieldIcon />
                 </span>
+              </div>
 
-                <h3 className="mt-6 text-lg font-bold text-[#142d50]">
-                  {step.title}
-                </h3>
+              <div className="mt-4 space-y-2.5">
+                {[
+                  ["Medical profile", "Important health details"],
+                  ["Emergency contacts", "People who can be contacted"],
+                  ["Privacy controls", "Choose what is shared"],
+                ].map(([title, description]) => (
+                  <div
+                    key={title}
+                    className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 shadow-sm">
+                      <svg
+                        width="17"
+                        height="17"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="m5 12 4 4L19 6" />
+                      </svg>
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold">{title}</p>
+                      <p className="text-xs leading-5 text-slate-500">
+                        {description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-                <p className="mt-3 text-sm leading-7 text-slate-600">
-                  {step.description}
+              <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3">
+                <p className="text-sm font-bold text-[#183f75]">
+                  Designed for emergencies
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Keep important information accessible while retaining
+                  control over the details you choose to disclose.
                 </p>
               </div>
-            ))}
+            </div>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-slate-200 bg-white py-7">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-3 px-5 text-sm text-slate-500 sm:flex-row sm:px-8">
-          <span>
-            © HealthPassport Emergency QR
-          </span>
+      <section className="border-y border-slate-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+          <div className="mb-4 max-w-2xl">
+            <h2 className="text-xl font-extrabold sm:text-2xl">
+              How it works
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Three simple steps to prepare your emergency profile.
+            </p>
+          </div>
 
-          <span>
-            Emergency information does not replace
-            professional medical assessment.
-          </span>
+          <div className="grid gap-3 md:grid-cols-3">
+            {steps.map((step) => (
+              <article
+                key={step.number}
+                className="rounded-xl border border-slate-200 bg-[#f9fbff] p-4"
+              >
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-xs font-extrabold text-[#185abc]">
+                  {step.number}
+                </span>
+                <h3 className="mt-3 text-base font-bold">
+                  {step.title}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {step.description}
+                </p>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-5 flex flex-col items-start justify-between gap-3 rounded-xl bg-[#143d75] p-4 text-white sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-lg font-bold">
+                Prepare before an emergency happens.
+              </h2>
+              <p className="mt-1 text-sm text-blue-100">
+                Create your profile and manage your Emergency QR.
+              </p>
+            </div>
+            <Link
+              to={primaryDestination}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-bold text-[#143d75] transition hover:bg-blue-50"
+            >
+              {user ? "Go to dashboard" : "Create account"}
+              <ArrowIcon />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <footer className="bg-[#f7f9fd]">
+        <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <span>HealthPassport Emergency QR</span>
+          <span>Emergency information made accessible.</span>
         </div>
       </footer>
     </main>

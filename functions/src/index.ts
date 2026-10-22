@@ -798,3 +798,16 @@ export {
 export {
   deleteEmergencyQr,
 } from "./deleteEmergencyQr";
+
+export {
+  sendEmailOtp,
+  verifyEmailOtp,
+} from "./emailOtp";
+
+export {
+  validateReferralCode,
+  prepareReferral,
+  completeReferralSetup,
+  getReferralDashboardSummary,
+} from "./referrals";
+

@@ -1,13 +1,24 @@
-﻿
-import { useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
+import { httpsCallable } from "firebase/functions";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { functions } from "../lib/firebase";
+
+type ReferralSummary = {
+  code: string;
+  verifiedReferrals: number;
+};
+
+const getReferralDashboardSummary = httpsCallable<
+  Record<string, never>,
+  ReferralSummary
+>(functions, "getReferralDashboardSummary");
 
 function Icon({
   name,
-  size = 22,
+  size = 20,
 }: {
-  name: "qr" | "user" | "shield" | "arrow" | "family";
+  name: "qr" | "user" | "shield" | "arrow" | "family" | "share" | "link";
   size?: number;
 }) {
   const common = {
@@ -62,6 +73,26 @@ function Icon({
     );
   }
 
+  if (name === "share") {
+    return (
+      <svg {...common}>
+        <circle cx="18" cy="5" r="3" />
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="19" r="3" />
+        <path d="m8.7 10.6 6.6-4.2M8.7 13.4l6.6 4.2" />
+      </svg>
+    );
+  }
+
+  if (name === "link") {
+    return (
+      <svg {...common}>
+        <path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" />
+        <path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1" />
+      </svg>
+    );
+  }
+
   return (
     <svg {...common}>
       <path d="M5 12h14M13 6l6 6-6 6" />
@@ -73,23 +104,33 @@ function Brand() {
   return (
     <Link
       to="/"
-      className="flex items-center gap-3"
       aria-label="HealthPassport homepage"
+      className="flex min-w-0 items-center gap-2.5"
     >
-      <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#143d75] text-xl font-extrabold !text-white">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#143d75] text-lg font-extrabold text-white">
         H
       </span>
-
-      <span>
-        <span className="block text-base font-extrabold tracking-tight text-[#142d50]">
+      <span className="min-w-0">
+        <span className="block text-sm font-extrabold tracking-tight text-[#142d50]">
           HealthPassport
         </span>
-
-        <span className="block text-xs font-medium text-slate-500">
+        <span className="block text-[11px] text-slate-500">
           Emergency QR
         </span>
       </span>
     </Link>
+  );
+}
+
+function SectionIcon({
+  name,
+}: {
+  name: "qr" | "user" | "shield" | "family" | "share" | "link";
+}) {
+  return (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#185abc]">
+      <Icon name={name} size={21} />
+    </span>
   );
 }
 
@@ -99,11 +140,38 @@ export default function DashboardPage() {
 
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
+  const [referral, setReferral] = useState<ReferralSummary | null>(null);
+  const [referralLoading, setReferralLoading] = useState(true);
+  const [copyMessage, setCopyMessage] = useState("");
 
   const displayName =
     user?.displayName?.trim() ||
     user?.email?.split("@")[0] ||
     "HealthPassport User";
+
+  const loadReferralSummary = useCallback(async () => {
+    if (!user?.emailVerified) {
+      setReferral(null);
+      setReferralLoading(false);
+      return;
+    }
+
+    setReferralLoading(true);
+
+    try {
+      const result = await getReferralDashboardSummary({});
+      setReferral(result.data);
+    } catch (err) {
+      console.error("Unable to load referral summary:", err);
+      setReferral(null);
+    } finally {
+      setReferralLoading(false);
+    }
+  }, [user?.uid, user?.emailVerified]);
+
+  useEffect(() => {
+    void loadReferralSummary();
+  }, [loadReferralSummary]);
 
   async function handleSignOut() {
     if (signingOut) return;
@@ -124,35 +192,121 @@ export default function DashboardPage() {
     }
   }
 
+  async function copyReferralCode() {
+    if (!referral?.code) return;
+
+    try {
+      await navigator.clipboard.writeText(referral.code);
+      setCopyMessage("Referral code copied.");
+    } catch {
+      setCopyMessage(`Copy this code manually: ${referral.code}`);
+    }
+  }
+
+  function getReferralLink(code: string): string {
+    const url = new URL(window.location.href);
+
+    // HashRouter routes must remain inside the URL fragment.
+    url.hash = `/?ref=${encodeURIComponent(code)}`;
+
+    return url.toString();
+  }
+
+  async function copyReferralLink() {
+    if (!referral?.code) return;
+
+    const referralLink = getReferralLink(referral.code);
+
+    try {
+      await navigator.clipboard.writeText(referralLink);
+      setCopyMessage(
+        "Referral link copied. You can paste it into any app."
+      );
+    } catch {
+      setCopyMessage(
+        `Copy this referral link manually: ${referralLink}`
+      );
+    }
+  }
+
+  async function shareReferralCode() {
+    if (!referral?.code) return;
+
+    const referralLink = getReferralLink(referral.code);
+    const shareText =
+      `Join HealthPassport Emergency QR using my referral code: ${referral.code}`;
+
+    try {
+      if (typeof navigator.share === "function") {
+        // On supported mobile browsers, this opens the device's native
+        // share sheet with compatible apps installed on the user's phone.
+        await navigator.share({
+          title: "HealthPassport Emergency QR",
+          text: shareText,
+          url: referralLink,
+        });
+      } else {
+        await navigator.clipboard.writeText(
+          `${shareText}\n${referralLink}`
+        );
+        setCopyMessage("Referral message and link copied.");
+      }
+    } catch (err) {
+      // Closing the native share sheet is not an error.
+      if (err instanceof Error && err.name === "AbortError") return;
+
+      try {
+        await navigator.clipboard.writeText(
+          `${shareText}\n${referralLink}`
+        );
+        setCopyMessage(
+          "Sharing isn't available here. Referral link copied instead."
+        );
+      } catch {
+        setCopyMessage(
+          `Share this message and link manually: ${shareText} ${referralLink}`
+        );
+      }
+    }
+  }
+
+  const cardClass =
+    "rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5";
+
+  const linkClass =
+    "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#185abc] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#124a9e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+
+  const secondaryLinkClass =
+    "inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#185abc] transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
+
   return (
     <div className="min-h-screen bg-[#f7f9fd] text-[#142d50]">
-      {/* Navigation */}
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Brand />
 
           <nav
             aria-label="Dashboard navigation"
-            className="flex flex-wrap items-center gap-2"
+            className="flex flex-wrap items-center gap-1"
           >
             <Link
               to="/dashboard"
               aria-current="page"
-              className="rounded-xl bg-blue-50 px-4 py-2.5 text-sm font-bold text-[#185abc]"
+              className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-[#185abc]"
             >
               Dashboard
             </Link>
 
             <Link
               to="/profile"
-              className="rounded-xl px-4 py-2.5 text-sm font-semibold text-[#183657] transition hover:bg-slate-100"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
             >
-              My Profile
+              Profile
             </Link>
 
             <Link
               to="/my-qr"
-              className="rounded-xl px-4 py-2.5 text-sm font-semibold text-[#183657] transition hover:bg-slate-100"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
             >
               My QR
             </Link>
@@ -161,280 +315,321 @@ export default function DashboardPage() {
               type="button"
               onClick={handleSignOut}
               disabled={signingOut}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-[#183657] transition hover:bg-slate-50 disabled:opacity-50"
+              className="min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {signingOut ? "Signing out..." : "Sign out"}
+              {signingOut ? "Signing out…" : "Sign out"}
             </button>
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
+      <main className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-7">
         {error && (
           <div
             role="alert"
-            className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800"
           >
             {error}
           </div>
         )}
 
-        {/* Welcome */}
-        <section className="mb-10">
-          <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-xs font-extrabold uppercase tracking-wider text-[#185abc]">
-            Your emergency dashboard
-          </span>
+        <section className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-[#185abc]">
+              Emergency dashboard
+            </p>
 
-          <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-[#142d50] sm:text-4xl">
-            Welcome, {displayName}
-          </h1>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
+              Welcome, {displayName}
+            </h1>
 
-          <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-            Manage your emergency information, control what
-            responders can see and access your personal
-            Emergency QR.
-          </p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+              Manage your emergency profile and personal QR from one place.
+            </p>
+          </div>
+
+          <Link to="/my-qr" className={linkClass}>
+            <Icon name="qr" size={18} />
+            Open My QR
+          </Link>
         </section>
 
-        {/* Main cards */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-            <div className="flex items-start gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-[#185abc]">
-                <Icon name="user" size={25} />
-              </span>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className={cardClass}>
+            <div className="flex items-center gap-3">
+              <SectionIcon name="user" />
 
               <div>
-                <h2 className="text-xl font-extrabold text-[#142d50]">
+                <h2 className="text-base font-bold">
                   Account information
                 </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Your HealthPassport account
+                <p className="text-xs text-slate-500">
+                  Your registered account details
                 </p>
               </div>
             </div>
 
-            <div className="mt-7 divide-y divide-slate-100">
-              <div className="py-4">
-                <p className="text-sm font-medium text-slate-500">
-                  Full name
-                </p>
-
-                <p className="mt-1 break-words font-semibold text-[#142d50]">
+            <dl className="mt-4 divide-y divide-slate-100">
+              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2.5 text-sm">
+                <dt className="text-slate-500">Full name</dt>
+                <dd className="break-words font-semibold">
                   {displayName}
-                </p>
+                </dd>
               </div>
 
-              <div className="py-4">
-                <p className="text-sm font-medium text-slate-500">
-                  Email address
-                </p>
-
-                <p className="mt-1 break-all font-semibold text-[#142d50]">
+              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2.5 text-sm">
+                <dt className="text-slate-500">Email</dt>
+                <dd className="break-all font-medium">
                   {user?.email || "Not available"}
-                </p>
+                </dd>
               </div>
 
-              <div className="py-4">
-                <p className="text-sm font-medium text-slate-500">
-                  Email verification
-                </p>
-
-                <span
-                  className={
-                    user?.emailVerified
-                      ? "mt-2 inline-flex rounded-full bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700"
-                      : "mt-2 inline-flex rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700"
-                  }
-                >
-                  {user?.emailVerified
-                    ? "Verified"
-                    : "Verification required"}
-                </span>
+              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2.5 text-sm">
+                <dt className="text-slate-500">Email status</dt>
+                <dd>
+                  <span
+                    className={
+                      user?.emailVerified
+                        ? "inline-flex rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700"
+                        : "inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800"
+                    }
+                  >
+                    {user?.emailVerified
+                      ? "Verified"
+                      : "Verification required"}
+                  </span>
+                </dd>
               </div>
+            </dl>
+
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <Link to="/profile" className={secondaryLinkClass}>
+                Manage emergency profile
+                <Icon name="arrow" size={16} />
+              </Link>
             </div>
-
-            <Link
-              to="/profile"
-              className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-5 py-3 text-sm font-bold text-[#185abc] transition hover:bg-blue-50"
-            >
-              Manage emergency profile
-              <Icon name="arrow" size={17} />
-            </Link>
           </section>
 
-          <section className="relative overflow-hidden rounded-3xl border border-blue-100 bg-white p-6 shadow-sm sm:p-8">
-            <div
-              className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-blue-50"
-              aria-hidden="true"
-            />
+          <section className={cardClass}>
+            <div className="flex items-center gap-3">
+              <SectionIcon name="qr" />
 
-            <div className="relative">
-              <div className="flex items-start gap-4">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-[#185abc]">
-                  <Icon name="qr" size={25} />
-                </span>
-
-                <div>
-                  <h2 className="text-xl font-extrabold text-[#142d50]">
-                    My Emergency QR
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Your personal emergency identifier
-                  </p>
-                </div>
+              <div>
+                <h2 className="text-base font-bold">My Emergency QR</h2>
+                <p className="text-xs text-slate-500">
+                  Your personal emergency identifier
+                </p>
               </div>
+            </div>
 
-              <p className="mt-7 max-w-md text-sm leading-7 text-slate-600">
-                Create and manage your personal QR. Once
-                activated, anyone who scans it can access
-                the emergency information you have approved
-                for public viewing.
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Manage your QR and the emergency information made available to
+              someone who scans it. Review your profile before sharing your QR.
+            </p>
+
+            <div className="mt-3 flex items-start gap-2 rounded-lg bg-blue-50 p-3">
+              <span className="mt-0.5 text-[#185abc]">
+                <Icon name="shield" size={18} />
+              </span>
+
+              <p className="text-xs leading-5 text-slate-600">
+                Only information allowed by your emergency-profile settings
+                should be shown on the public QR page.
               </p>
+            </div>
 
-              <div className="mt-6 rounded-2xl border border-blue-100 bg-[#f2f6fc] p-5">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 text-[#185abc]">
-                    <Icon name="shield" size={21} />
-                  </span>
-
-                  <div>
-                    <h3 className="text-sm font-bold text-[#142d50]">
-                      Privacy-controlled sharing
-                    </h3>
-
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      Your public QR displays only the
-                      information permitted by your
-                      emergency-profile settings.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <Link
-                to="/my-qr"
-                className="mt-7 inline-flex min-h-12 items-center justify-center gap-3 rounded-xl bg-[#185abc] px-6 py-3 text-sm font-bold !text-white shadow-sm transition hover:bg-[#124a9e] hover:!text-white"
-              >
-                Open My QR
-                <Icon name="arrow" size={18} />
+            <div className="mt-3">
+              <Link to="/my-qr" className={linkClass}>
+                Manage My QR
+                <Icon name="arrow" size={17} />
               </Link>
             </div>
           </section>
         </div>
 
-        {/* Quick actions */}
-        <section className="mt-12">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#185abc]">
-              Quick access
+        <section className="mt-5">
+          <div className="mb-3">
+            <h2 className="text-lg font-bold">Referral programme</h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Invite people to join HealthPassport Emergency QR with your code.
             </p>
-
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-[#142d50]">
-              What would you like to do?
-            </h2>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-3">
+          <div className={cardClass}>
+            {!user?.emailVerified ? (
+              <p className="text-sm text-amber-800">
+                Verify your email to access your referral code.
+              </p>
+            ) : referralLoading ? (
+              <p className="text-sm text-slate-500">
+                Loading your referral details…
+              </p>
+            ) : referral ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-600">
+                    Your referral code
+                  </p>
+
+                  <p className="mt-2 break-all font-mono text-2xl font-extrabold tracking-widest text-[#185abc]">
+                    {referral.code}
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyReferralCode()}
+                      className={linkClass}
+                    >
+                      Copy code
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void copyReferralLink()}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <Icon name="link" size={17} />
+                      Copy link
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void shareReferralCode()}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <Icon name="share" size={17} />
+                      Share
+                    </button>
+                  </div>
+
+                  {copyMessage && (
+                    <p role="status" className="mt-2 text-sm text-slate-600">
+                      {copyMessage}
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-xl bg-blue-50 p-4">
+                  <p className="text-sm font-semibold text-slate-600">
+                    Verified referrals
+                  </p>
+
+                  <p className="mt-2 text-4xl font-extrabold text-[#185abc]">
+                    {referral.verifiedReferrals}
+                  </p>
+
+                  <p className="mt-1 text-sm leading-5 text-slate-600">
+                    Counts accounts whose referral attribution has been
+                    verified. Pending registrations are not counted.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-slate-600">
+                  Your referral details could not be loaded.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => void loadReferralSummary()}
+                  className={`${linkClass} mt-3`}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="mt-5">
+          <div className="mb-3">
+            <h2 className="text-lg font-bold">Quick access</h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Go directly to the task you need.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Link
               to="/profile"
-              className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+              className={`${cardClass} group transition hover:border-blue-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-[#185abc]">
-                <Icon name="user" size={25} />
-              </span>
+              <div className="flex items-center gap-3">
+                <SectionIcon name="user" />
+                <h3 className="text-sm font-bold">Emergency profile</h3>
+              </div>
 
-              <h3 className="mt-6 text-lg font-bold text-[#142d50]">
-                Emergency profile
-              </h3>
-
-              <p className="mt-3 min-h-14 text-sm leading-7 text-slate-600">
-                Add or update your medical information,
-                emergency contacts and privacy settings.
+              <p className="mt-3 text-sm leading-5 text-slate-600">
+                Update medical details, emergency contacts and sharing settings.
               </p>
 
-              <span className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-[#185abc]">
-                Manage profile
-                <Icon name="arrow" size={17} />
+              <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#185abc]">
+                Edit profile <Icon name="arrow" size={15} />
               </span>
             </Link>
 
             <Link
               to="/my-qr"
-              className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+              className={`${cardClass} group transition hover:border-blue-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-[#185abc]">
-                <Icon name="qr" size={25} />
-              </span>
+              <div className="flex items-center gap-3">
+                <SectionIcon name="qr" />
+                <h3 className="text-sm font-bold">My Emergency QR</h3>
+              </div>
 
-              <h3 className="mt-6 text-lg font-bold text-[#142d50]">
-                My Emergency QR
-              </h3>
-
-              <p className="mt-3 min-h-14 text-sm leading-7 text-slate-600">
-                Create, activate, download, test or
-                deactivate your personal Emergency QR.
+              <p className="mt-3 text-sm leading-5 text-slate-600">
+                Create, test, download or deactivate your personal QR.
               </p>
 
-              <span className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-[#185abc]">
-                Manage my QR
-                <Icon name="arrow" size={17} />
+              <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#185abc]">
+                Open QR <Icon name="arrow" size={15} />
               </span>
             </Link>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-                <Icon name="family" size={25} />
-              </span>
+            <div className={cardClass}>
+              <div className="flex items-center gap-3">
+                <SectionIcon name="family" />
+                <h3 className="text-sm font-bold">Family Emergency QRs</h3>
+              </div>
 
-              <h3 className="mt-6 text-lg font-bold text-[#142d50]">
-                Family Emergency QRs
-              </h3>
-
-              <p className="mt-3 min-h-14 text-sm leading-7 text-slate-600">
-                Independently manage emergency profiles
-                and QRs for consenting family members
-                and dependants.
+              <p className="mt-3 text-sm leading-5 text-slate-600">
+                Family and dependant QR management is not yet available in this
+                release.
               </p>
 
-              <span className="mt-5 inline-flex rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+              <span className="mt-3 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
                 Planned feature
               </span>
             </div>
           </div>
         </section>
 
-        {/* Privacy notice */}
-        <section className="mt-10 flex flex-col gap-4 rounded-2xl border border-blue-100 bg-blue-50 p-6 sm:flex-row sm:items-start">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-[#185abc]">
-            <Icon name="shield" size={23} />
+        <section className="mt-5 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
+          <span className="mt-0.5 text-[#185abc]">
+            <Icon name="shield" size={20} />
           </span>
 
           <div>
-            <h2 className="text-base font-bold text-[#142d50]">
-              Your information. Your choice.
+            <h2 className="text-sm font-bold">
+              Your information, your choice
             </h2>
 
-            <p className="mt-2 max-w-4xl text-sm leading-7 text-slate-600">
-              Only information you explicitly authorize
-              should appear on your public Emergency QR.
-              You can edit your profile and deactivate
-              your QR when needed. Emergency information
-              is self-reported and should be independently
-              verified by medical professionals.
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Keep emergency information accurate and share only what is
+              appropriate for public viewing. Self-reported information does not
+              replace professional medical assessment.
             </p>
           </div>
         </section>
       </main>
 
-      <footer className="mt-8 border-t border-slate-200 bg-white py-6">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-2 px-5 text-xs text-slate-500 sm:flex-row sm:px-8">
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <span>HealthPassport Emergency QR</span>
           <span>
-            Emergency information does not replace
-            professional medical assessment.
+            Emergency information does not replace professional medical care.
           </span>
         </div>
       </footer>

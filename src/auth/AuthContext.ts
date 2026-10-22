@@ -12,7 +12,8 @@ export type AuthContextType = {
   register: (
     name: string,
     email: string,
-    password: string
+    password: string,
+    referralCode?: string
   ) => Promise<void>;
   login: (
     email: string,
