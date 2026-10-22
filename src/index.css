@@ -58,7 +58,7 @@ button:not(:disabled) {
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.75;
 }
 
 a {
@@ -146,6 +146,7 @@ video {
   border: 1px solid var(--hp-border);
   border-radius: 14px;
   background: #fff;
+  color: #142d50;
   box-shadow: 0 3px 12px rgb(20 45 80 / 4%);
 }
 
@@ -186,7 +187,7 @@ video {
   color: var(--hp-muted);
 }
 
-/* Buttons: compact but still touch-friendly */
+/* Buttons: consistent contrast and white text on solid backgrounds */
 .hp-btn-primary,
 .hp-btn-secondary,
 .hp-btn-success,
@@ -212,9 +213,10 @@ video {
   color: #fff !important;
 }
 
-.hp-btn-primary:hover {
+.hp-btn-primary:hover:not(:disabled) {
   border-color: #124a9e;
   background: #124a9e;
+  color: #fff !important;
 }
 
 .hp-btn-secondary {
@@ -223,8 +225,9 @@ video {
   color: #142d50 !important;
 }
 
-.hp-btn-secondary:hover {
+.hp-btn-secondary:hover:not(:disabled) {
   background: #f1f5f9;
+  color: #142d50 !important;
 }
 
 .hp-btn-success {
@@ -233,8 +236,10 @@ video {
   color: #fff !important;
 }
 
-.hp-btn-success:hover {
+.hp-btn-success:hover:not(:disabled) {
+  border-color: #065f38;
   background: #065f38;
+  color: #fff !important;
 }
 
 .hp-btn-danger {
@@ -243,11 +248,43 @@ video {
   color: #fff !important;
 }
 
-.hp-btn-danger:hover {
+.hp-btn-danger:hover:not(:disabled) {
+  border-color: #a7172b;
   background: #a7172b;
+  color: #fff !important;
 }
 
-/* Form controls */
+/* Keep text and icons inside the application's solid-colour buttons white */
+.hp-btn-primary *,
+.hp-btn-success *,
+.hp-btn-danger * {
+  color: #fff !important;
+}
+
+/* Ensure SVG icons inherit the intended button text colour */
+.hp-btn-primary svg,
+.hp-btn-success svg,
+.hp-btn-danger svg {
+  color: #fff !important;
+  stroke: currentColor;
+}
+
+/* Explicit reusable class for other solid blue controls */
+.hp-blue-surface {
+  background-color: #185abc;
+  color: #fff;
+}
+
+.hp-blue-surface,
+.hp-blue-surface * {
+  color: #fff !important;
+}
+
+.hp-blue-surface svg {
+  stroke: currentColor;
+}
+
+/* Form controls: preserve dark text on light backgrounds */
 .hp-input,
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 select,
@@ -383,4 +420,40 @@ table {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
+}
+
+/* Fix white text on all solid blue buttons */
+button.bg-blue-600,
+button.bg-blue-700,
+button.bg-blue-800,
+a.bg-blue-600,
+a.bg-blue-700,
+a.bg-blue-800,
+.bg-blue-600 button,
+.bg-blue-700 button,
+.bg-blue-800 button {
+  color: #ffffff !important;
+}
+
+/* Keep all text and icons white inside solid blue buttons */
+button.bg-blue-600 *,
+button.bg-blue-700 *,
+button.bg-blue-800 *,
+button.bg-blue-600 svg,
+button.bg-blue-700 svg,
+button.bg-blue-800 svg,
+a.bg-blue-600 *,
+a.bg-blue-700 *,
+a.bg-blue-800 * {
+  color: #ffffff !important;
+}
+
+/* Ensure the existing primary button class remains white */
+.hp-btn-primary,
+.hp-btn-primary *,
+.hp-btn-success,
+.hp-btn-success *,
+.hp-btn-danger,
+.hp-btn-danger * {
+  color: #ffffff !important;
 }

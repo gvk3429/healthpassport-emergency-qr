@@ -276,7 +276,7 @@ export default function DashboardPage() {
     "rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5";
 
   const linkClass =
-    "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#185abc] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#124a9e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+  "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#185abc] px-4 py-2 text-sm font-semibold transition hover:bg-[#124a9e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
 
   const secondaryLinkClass =
     "inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#185abc] transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
@@ -350,10 +350,14 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <Link to="/my-qr" className={linkClass}>
-            <Icon name="qr" size={18} />
-            Open My QR
-          </Link>
+          <Link
+  to="/my-qr"
+  className={linkClass}
+  style={{ color: "#ffffff" }}
+>
+  <Icon name="qr" size={18} />
+  Open My QR
+</Link>
         </section>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -441,10 +445,14 @@ export default function DashboardPage() {
             </div>
 
             <div className="mt-3">
-              <Link to="/my-qr" className={linkClass}>
-                Manage My QR
-                <Icon name="arrow" size={17} />
-              </Link>
+              <Link
+  to="/my-qr"
+  className={linkClass}
+  style={{ color: "#ffffff" }}
+>
+  Manage My QR
+  <Icon name="arrow" size={17} />
+</Link>
             </div>
           </section>
         </div>
@@ -479,12 +487,13 @@ export default function DashboardPage() {
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
-                      type="button"
-                      onClick={() => void copyReferralCode()}
-                      className={linkClass}
-                    >
-                      Copy code
-                    </button>
+  type="button"
+  onClick={() => void copyReferralCode()}
+  className={linkClass}
+  style={{ color: "#ffffff" }}
+>
+  Copy code
+</button>
 
                     <button
                       type="button"
