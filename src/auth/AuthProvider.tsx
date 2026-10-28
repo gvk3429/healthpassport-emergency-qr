@@ -1,4 +1,3 @@
-
 import {
   useEffect,
   useState,
@@ -194,12 +193,6 @@ export function AuthProvider({
 
     validatePassword(password);
 
-    /*
-     * Validate the referral code before creating the account.
-     * The Cloud Function remains responsible for authoritative
-     * validation and must enforce expiry, disabled status,
-     * self-referral prevention, and other referral rules.
-     */
     if (referralCode) {
       registrationLog("Validating referral code.");
 
@@ -225,7 +218,8 @@ export function AuthProvider({
 
         throw new Error(
           "We could not validate this referral code. " +
-            "Please check your connection or try again."
+            "Please check your connection or try again.",
+          { cause: error }
         );
       }
     }
@@ -241,6 +235,7 @@ export function AuthProvider({
     );
 
     const createdUser = credential.user;
+
     setUser(createdUser);
 
     try {
@@ -265,11 +260,6 @@ export function AuthProvider({
         updatedAt: serverTimestamp(),
       });
 
-      /*
-       * Prepare referral attribution only after the account
-       * document exists. The backend must bind the referral
-       * to the authenticated user, not trust a client-supplied UID.
-       */
       if (referralCode) {
         registrationLog("Preparing referral attribution.");
 
@@ -301,11 +291,6 @@ export function AuthProvider({
         uid: createdUser.uid,
       });
 
-      /*
-       * Do not delete the newly created Firebase account here:
-       * account creation and referral setup may already have
-       * persisted data. Allow the user to sign in and recover.
-       */
       throw error;
     }
   }
@@ -327,7 +312,11 @@ export function AuthProvider({
 
   async function loginWithGoogle(): Promise<void> {
     const provider = new GoogleAuthProvider();
-    const credential = await signInWithPopup(auth, provider);
+
+    const credential = await signInWithPopup(
+      auth,
+      provider
+    );
 
     setUser(credential.user);
   }

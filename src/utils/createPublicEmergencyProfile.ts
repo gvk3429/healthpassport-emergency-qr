@@ -33,6 +33,10 @@ export function createPublicEmergencyProfile(
     result.photoUrl = profile.photoUrl;
   }
 
+  if (privacy.showHomeAddress && profile.homeAddress?.trim()) {
+    result.homeAddress = profile.homeAddress.trim();
+  }
+
   if (
     privacy.showDateOfBirth &&
     profile.dateOfBirth

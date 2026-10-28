@@ -13,6 +13,7 @@ export interface PublicEmergencyProfile {
   fullName: string;
 
   photoUrl?: string;
+  homeAddress?: string;
   dateOfBirth?: string;
   bloodGroup?: string;
 

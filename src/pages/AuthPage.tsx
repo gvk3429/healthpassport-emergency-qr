@@ -1,6 +1,4 @@
-﻿
-import {
-  useEffect,
+﻿import {
   useState,
   type FormEvent,
   type ReactNode,
@@ -138,6 +136,22 @@ export default function AuthPage() {
     readReferralCode(location.search)
   );
 
+  /*
+   * Track the previous query string so referral links opened after
+   * the page loads can update the referral field without useEffect.
+   */
+  const [previousSearch, setPreviousSearch] = useState(location.search);
+
+  if (location.search !== previousSearch) {
+    setPreviousSearch(location.search);
+
+    const incomingCode = readReferralCode(location.search);
+
+    if (incomingCode) {
+      setReferralCode(incomingCode);
+    }
+  }
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -149,15 +163,6 @@ export default function AuthPage() {
 
   const mode: AuthMode = resetMode ? "reset" : initialMode;
   const isRegister = mode === "register";
-
-  // Supports direct referral links and links opened after the page loads.
-  useEffect(() => {
-    const incomingCode = readReferralCode(location.search);
-
-    if (incomingCode) {
-      setReferralCode(incomingCode);
-    }
-  }, [location.search]);
 
   const passwordRequirements = {
     length: password.length >= 8 && password.length <= 128,
@@ -469,7 +474,6 @@ export default function AuthPage() {
                   </p>
                 </div>
 
-                {/* Referral code field */}
                 <div>
                   <label
                     htmlFor="referralCode"

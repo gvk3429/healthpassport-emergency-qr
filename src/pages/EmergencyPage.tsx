@@ -17,6 +17,7 @@ type PublicEmergencyData = {
   status: "ACTIVE";
   fullName: string;
   photoUrl?: string;
+  homeAddress?: string;
   dateOfBirth?: string;
   bloodGroup?: string;
   allergies?: string[];
@@ -535,6 +536,15 @@ export default function EmergencyPage() {
 
                   <p className="mt-2 text-xs text-red-700">
                     Verify clinically before transfusion.
+                  </p>
+                </section>
+              )}
+
+              {data.homeAddress && (
+                <section className="mt-6 border-t pt-5">
+                  <h3 className="font-semibold">Home address</h3>
+                  <p className="mt-2 whitespace-pre-wrap text-slate-700">
+                    {data.homeAddress}
                   </p>
                 </section>
               )}

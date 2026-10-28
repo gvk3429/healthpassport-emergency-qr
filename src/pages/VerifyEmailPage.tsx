@@ -74,15 +74,22 @@ export default function VerifyEmailPage() {
     }
 
     if (user.emailVerified) {
-      void checkVerification();
-      return;
-    }
-
+  const timer = window.setTimeout(() => {
     void checkVerification();
+  }, 0);
 
-    const interval = window.setInterval(() => {
-      void checkVerification();
-    }, 3000);
+  return () => {
+    window.clearTimeout(timer);
+  };
+}
+
+    const initialTimer = window.setTimeout(() => {
+  void checkVerification();
+}, 0);
+
+const interval = window.setInterval(() => {
+  void checkVerification();
+}, 3000);
 
     function handleVisibilityChange() {
       if (document.visibilityState === "visible") {
@@ -101,13 +108,16 @@ export default function VerifyEmailPage() {
     window.addEventListener("focus", handleFocus);
 
     return () => {
-      window.clearInterval(interval);
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibilityChange
-      );
-      window.removeEventListener("focus", handleFocus);
-    };
+  window.clearTimeout(initialTimer);
+  window.clearInterval(interval);
+
+  document.removeEventListener(
+    "visibilitychange",
+    handleVisibilityChange
+  );
+
+  window.removeEventListener("focus", handleFocus);
+};
   }, [user, loading, navigate, checkVerification]);
 
   async function handleResend() {

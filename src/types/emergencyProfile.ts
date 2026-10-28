@@ -25,6 +25,7 @@ export interface EmergencyContact {
 
 export interface EmergencyPrivacy {
   showPhoto: boolean;
+  showHomeAddress: boolean;
   showDateOfBirth: boolean;
   showBloodGroup: boolean;
   showAllergies: boolean;
@@ -39,6 +40,7 @@ export interface EmergencyProfile {
 
   fullName: string;
   photoUrl: string;
+  homeAddress: string;
   dateOfBirth: string;
   bloodGroup: BloodGroup;
 
@@ -60,6 +62,7 @@ export interface EmergencyProfile {
 
 export const DEFAULT_EMERGENCY_PRIVACY: EmergencyPrivacy = {
   showPhoto: false,
+  showHomeAddress: false,
   showDateOfBirth: false,
   showBloodGroup: false,
   showAllergies: false,

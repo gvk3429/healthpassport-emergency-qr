@@ -1,4 +1,6 @@
-﻿import { useCallback, useEffect, useState } from "react";
+﻿// src/pages/DashboardPage.tsx
+
+import { useCallback, useEffect, useState } from "react";
 import { httpsCallable } from "firebase/functions";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -110,6 +112,7 @@ function Brand() {
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#143d75] text-lg font-extrabold text-white">
         H
       </span>
+
       <span className="min-w-0">
         <span className="block text-sm font-extrabold tracking-tight text-[#142d50]">
           HealthPassport
@@ -151,6 +154,9 @@ export default function DashboardPage() {
     "HealthPassport User";
 
   const loadReferralSummary = useCallback(async () => {
+    // Defer state updates until after the effect's synchronous execution.
+    await Promise.resolve();
+
     if (!user?.emailVerified) {
       setReferral(null);
       setReferralLoadFailed(false);
@@ -158,12 +164,12 @@ export default function DashboardPage() {
       return;
     }
 
-    setReferralLoading(true);
     setReferralLoadFailed(false);
 
     try {
       const result = await getReferralDashboardSummary({});
       setReferral(result.data);
+      setReferralLoadFailed(false);
     } catch (err) {
       console.error("Unable to load referral summary:", err);
       setReferral(null);
@@ -171,11 +177,17 @@ export default function DashboardPage() {
     } finally {
       setReferralLoading(false);
     }
-  }, [user?.uid, user?.emailVerified]);
+  }, [user?.emailVerified]);
 
   useEffect(() => {
+  const timer = window.setTimeout(() => {
     void loadReferralSummary();
-  }, [loadReferralSummary]);
+  }, 0);
+
+  return () => {
+    window.clearTimeout(timer);
+  };
+}, [loadReferralSummary]);
 
   async function handleSignOut() {
     if (signingOut) return;
@@ -190,7 +202,7 @@ export default function DashboardPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to sign out. Please try again."
+          : "Unable to sign out. Please try again.",
       );
       setSigningOut(false);
     }
@@ -224,11 +236,11 @@ export default function DashboardPage() {
     try {
       await navigator.clipboard.writeText(referralLink);
       setCopyMessage(
-        "Referral link copied. You can paste it into any app."
+        "Referral link copied. You can paste it into any app.",
       );
     } catch {
       setCopyMessage(
-        `Copy this referral link manually: ${referralLink}`
+        `Copy this referral link manually: ${referralLink}`,
       );
     }
   }
@@ -249,7 +261,7 @@ export default function DashboardPage() {
         });
       } else {
         await navigator.clipboard.writeText(
-          `${shareText}\n${referralLink}`
+          `${shareText}\n${referralLink}`,
         );
         setCopyMessage("Referral message and link copied.");
       }
@@ -259,14 +271,14 @@ export default function DashboardPage() {
 
       try {
         await navigator.clipboard.writeText(
-          `${shareText}\n${referralLink}`
+          `${shareText}\n${referralLink}`,
         );
         setCopyMessage(
-          "Sharing isn't available here. Referral link copied instead."
+          "Sharing isn't available here. Referral link copied instead.",
         );
       } catch {
         setCopyMessage(
-          `Share this message and link manually: ${shareText} ${referralLink}`
+          `Share this message and link manually: ${shareText} ${referralLink}`,
         );
       }
     }
@@ -276,7 +288,7 @@ export default function DashboardPage() {
     "rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5";
 
   const linkClass =
-  "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#185abc] px-4 py-2 text-sm font-semibold transition hover:bg-[#124a9e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+    "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg !bg-[#185abc] px-4 py-2 text-sm font-semibold !text-white shadow-sm transition hover:!bg-[#124a9e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
 
   const secondaryLinkClass =
     "inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#185abc] transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
@@ -350,14 +362,10 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <Link
-  to="/my-qr"
-  className={linkClass}
-  style={{ color: "#ffffff" }}
->
-  <Icon name="qr" size={18} />
-  Open My QR
-</Link>
+          <Link to="/my-qr" className={linkClass}>
+            <Icon name="qr" size={18} />
+            Open My QR
+          </Link>
         </section>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -445,14 +453,10 @@ export default function DashboardPage() {
             </div>
 
             <div className="mt-3">
-              <Link
-  to="/my-qr"
-  className={linkClass}
-  style={{ color: "#ffffff" }}
->
-  Manage My QR
-  <Icon name="arrow" size={17} />
-</Link>
+              <Link to="/my-qr" className={linkClass}>
+                Manage My QR
+                <Icon name="arrow" size={17} />
+              </Link>
             </div>
           </section>
         </div>
@@ -487,13 +491,12 @@ export default function DashboardPage() {
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
-  type="button"
-  onClick={() => void copyReferralCode()}
-  className={linkClass}
-  style={{ color: "#ffffff" }}
->
-  Copy code
-</button>
+                      type="button"
+                      onClick={() => void copyReferralCode()}
+                      className={linkClass}
+                    >
+                      Copy code
+                    </button>
 
                     <button
                       type="button"
@@ -560,7 +563,10 @@ export default function DashboardPage() {
 
                 <button
                   type="button"
-                  onClick={() => void loadReferralSummary()}
+                  onClick={() => {
+                    setReferralLoading(true);
+                    void loadReferralSummary();
+                  }}
                   className={`${linkClass} mt-3`}
                 >
                   Try again

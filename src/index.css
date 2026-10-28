@@ -457,3 +457,52 @@ a.bg-blue-800 * {
 .hp-btn-danger * {
   color: #ffffff !important;
 }
+
+/* HealthPassport Emergency QR: larger emergency instructions */
+
+textarea[name="emergencyInstructions"],
+textarea#emergencyInstructions {
+  min-height: 220px;
+  resize: vertical;
+  padding: 16px;
+  font-size: 16px;
+  line-height: 1.75;
+  color: #142d50;
+}
+
+/* Keep emergency card content readable in the print preview. */
+
+#hp-emergency-print-card {
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+#hp-emergency-print-card .hp-print-headline {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+#hp-emergency-print-card .hp-print-message {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+#hp-emergency-print-card .hp-print-qr {
+  flex-shrink: 0;
+}
+
+#hp-emergency-print-card .hp-print-qr canvas {
+  display: block;
+  max-width: 100%;
+}
+
+/* Mobile profile form readability. */
+
+@media (max-width: 640px) {
+  textarea[name="emergencyInstructions"],
+  textarea#emergencyInstructions {
+    min-height: 200px;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+}
