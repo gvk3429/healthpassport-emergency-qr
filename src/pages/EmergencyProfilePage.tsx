@@ -1,17 +1,23 @@
 ﻿// File: src/pages/EmergencyProfilePage.tsx
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
-  type FormEvent,
   type ChangeEvent,
+  type FormEvent,
 } from "react";
-
 import { Link } from "react-router-dom";
-import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
-import { storage } from "../lib/firebase";
+import {
+  deleteObject,
+  getDownloadURL,
+  ref as storageRef,
+  uploadBytes,
+} from "firebase/storage";
+
 import { useAuth } from "../auth/AuthContext";
+import { storage } from "../lib/firebase";
 
 import {
   getEmergencyProfile,
@@ -38,61 +44,70 @@ const BLOOD_GROUPS: BloodGroup[] = [
   "O-",
 ];
 
-const MAX_INSTRUCTION_LENGTH = 2000;
-const MAX_EMERGENCY_CONTACTS = 10;
+const MAX_CONTACTS = 10;
+const MAX_PHOTO_SIZE = 5 * 1024 * 1024;
+const MAX_INSTRUCTIONS_LENGTH = 2000;
+
+const INPUT_CLASS =
+  "mt-1.5 block w-full rounded-lg border border-slate-300 bg-white " +
+  "px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 " +
+  "focus:border-blue-600 focus:outline-none focus:ring-2 " +
+  "focus:ring-blue-100 disabled:bg-slate-100";
+
+const SECTION_CLASS =
+  "rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5";
 
 const PRIVACY_OPTIONS: {
   key: keyof EmergencyPrivacy;
   label: string;
+  description: string;
 }[] = [
   {
     key: "showPhoto",
     label: "Profile photo",
+    description: "Allow your photo to appear on your public QR page.",
   },
   {
     key: "showHomeAddress",
     label: "Home address",
+    description: "Allow anyone scanning your QR to view your address.",
   },
   {
     key: "showDateOfBirth",
     label: "Date of birth",
+    description: "Display your date of birth.",
   },
   {
     key: "showBloodGroup",
     label: "Blood group",
+    description: "Display your recorded blood group.",
   },
   {
     key: "showAllergies",
     label: "Allergies",
+    description: "Display your recorded allergies.",
   },
   {
     key: "showMedicalConditions",
     label: "Medical conditions",
+    description: "Display your recorded medical conditions.",
   },
   {
     key: "showMedications",
     label: "Medications",
+    description: "Display your current medications.",
   },
   {
     key: "showEmergencyContacts",
     label: "Emergency contact phone numbers",
+    description: "Allow responders to view emergency contact numbers.",
   },
   {
     key: "showEmergencyInstructions",
     label: "Emergency instructions",
+    description: "Display your emergency instructions.",
   },
 ];
-
-const inputClass =
-  "mt-2 w-full rounded-xl border border-slate-300 " +
-  "bg-white px-4 py-3 text-base text-slate-900 " +
-  "placeholder:text-slate-400 " +
-  "focus:border-blue-600 focus:outline-none " +
-  "focus:ring-2 focus:ring-blue-100";
-
-const sectionClass =
-  "rounded-2xl border border-slate-200 " +
-  "bg-white p-5 shadow-sm sm:p-7";
 
 function textToList(value: string): string[] {
   return value
@@ -101,13 +116,11 @@ function textToList(value: string): string[] {
     .filter(Boolean);
 }
 
-function listToText(value: string[]): string {
-  return value.join("\n");
+function listToText(value: string[] | undefined): string {
+  return (value || []).join("\n");
 }
 
-function createContact(
-  isPrimary: boolean
-): EmergencyContact {
+function createContact(isPrimary: boolean): EmergencyContact {
   return {
     id: crypto.randomUUID(),
     name: "",
@@ -127,16 +140,31 @@ function getErrorMessage(error: unknown): string {
 }
 
 function getToday(): string {
-  const date = new Date();
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(
-    2,
-    "0"
-  );
-  const day = String(date.getDate()).padStart(2, "0");
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+function describeSaveError(error: unknown): {
+  message: string;
+  fieldId?: string;
+} {
+  const message = getErrorMessage(error);
+
+  if (message.includes("Missing or insufficient permissions")) {
+    return {
+      fieldId: "homeAddress",
+      message:
+        "Firebase denied permission to save your emergency profile. " +
+        "Check that the deployed Firestore rules allow the homeAddress " +
+        "field and that the profile ownership conditions are satisfied.",
+    };
+  }
+
+  return { message };
 }
 
 export default function EmergencyProfilePage() {
@@ -156,82 +184,69 @@ export default function EmergencyProfilePage() {
   const [fullName, setFullName] = useState("");
   const [homeAddress, setHomeAddress] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
-
   const [bloodGroup, setBloodGroup] =
     useState<BloodGroup>("Unknown");
 
   const [allergies, setAllergies] = useState("");
-  const [medicalConditions, setMedicalConditions] =
-    useState("");
+  const [medicalConditions, setMedicalConditions] = useState("");
   const [medications, setMedications] = useState("");
+  const [emergencyInstructions, setEmergencyInstructions] =
+    useState("");
 
-  const [
-    emergencyInstructions,
-    setEmergencyInstructions,
-  ] = useState("");
+  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
 
-  const [contacts, setContacts] =
-    useState<EmergencyContact[]>([]);
+  const [privacy, setPrivacy] = useState<EmergencyPrivacy>({
+    ...DEFAULT_EMERGENCY_PRIVACY,
+  });
 
-  const [privacy, setPrivacy] =
-    useState<EmergencyPrivacy>({
-      ...DEFAULT_EMERGENCY_PRIVACY,
-    });
-
-  const [consentGiven, setConsentGiven] =
-    useState(false);
-
+  const [consentGiven, setConsentGiven] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  useEffect(() => {
-  if (!user) {
-    return;
-  }
+  const clearMessages = useCallback(() => {
+    setError("");
+    setSuccess("");
+  }, []);
 
+  /*
+   * Load the profile when an authenticated user is available.
+   * No synchronous setState call is made for a missing user.
+   */
+  useEffect(() => {
     let cancelled = false;
 
-    async function loadProfile() {
-      try {
-        const profile = await getEmergencyProfile(
-          user!.uid
-        );
+    if (!user) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
-        if (cancelled) {
-          return;
-        }
+    async function loadProfile(): Promise<void> {
+      try {
+        const profile = await getEmergencyProfile(user!.uid);
+
+        if (cancelled) return;
 
         if (profile) {
           setExistingProfile(profile);
-
-          setFullName(profile.fullName);
+          setFullName(profile.fullName || "");
           setHomeAddress(profile.homeAddress || "");
-          setDateOfBirth(profile.dateOfBirth);
-          setBloodGroup(profile.bloodGroup);
+          setDateOfBirth(profile.dateOfBirth || "");
+          setBloodGroup(profile.bloodGroup || "Unknown");
 
-          setAllergies(
-            listToText(profile.allergies)
-          );
-
-          setMedicalConditions(
-            listToText(profile.medicalConditions)
-          );
-
-          setMedications(
-            listToText(profile.medications)
-          );
+          setAllergies(listToText(profile.allergies));
+          setMedicalConditions(listToText(profile.medicalConditions));
+          setMedications(listToText(profile.medications));
 
           setEmergencyInstructions(
-            profile.emergencyInstructions
+            profile.emergencyInstructions || "",
           );
 
           setContacts(
-            profile.emergencyContacts.map(
-              (contact) => ({
-                ...contact,
-                email: contact.email || "",
-              })
-            )
+            (profile.emergencyContacts || []).map((contact) => ({
+              ...contact,
+              email: contact.email || "",
+            })),
           );
 
           setPrivacy({
@@ -239,10 +254,9 @@ export default function EmergencyProfilePage() {
             ...profile.privacy,
           });
 
-          setConsentGiven(profile.consentGiven);
+          setConsentGiven(Boolean(profile.consentGiven));
         } else {
           setExistingProfile(null);
-
           setFullName(user!.displayName || "");
           setHomeAddress("");
           setDateOfBirth("");
@@ -261,9 +275,9 @@ export default function EmergencyProfilePage() {
 
           setConsentGiven(false);
         }
-      } catch (err) {
+      } catch (loadError) {
         if (!cancelled) {
-          setError(getErrorMessage(err));
+          setError(getErrorMessage(loadError));
         }
       } finally {
         if (!cancelled) {
@@ -280,24 +294,15 @@ export default function EmergencyProfilePage() {
   }, [user]);
 
   useEffect(() => {
-    if (!success || !successRef.current) {
-      return;
-    }
+    if (!success || !successRef.current) return;
 
     successRef.current.scrollIntoView({
       behavior: "smooth",
       block: "start",
     });
 
-    successRef.current.focus({
-      preventScroll: true,
-    });
+    successRef.current.focus({ preventScroll: true });
   }, [success]);
-
-  function clearMessages(): void {
-    setError("");
-    setSuccess("");
-  }
 
   function reportError(message: string, fieldId?: string): void {
     setError(message);
@@ -310,41 +315,38 @@ export default function EmergencyProfilePage() {
 
       if (!target) return;
 
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+
+      if (target instanceof HTMLElement) {
+        target.focus({ preventScroll: true });
+      }
 
       if (fieldId && target instanceof HTMLElement) {
-        target.classList.add("!border-red-500", "!ring-2", "!ring-red-200");
+        target.classList.add(
+          "!border-red-500",
+          "!ring-2",
+          "!ring-red-200",
+        );
+
         window.setTimeout(() => {
-          target.classList.remove("!border-red-500", "!ring-2", "!ring-red-200");
+          target.classList.remove(
+            "!border-red-500",
+            "!ring-2",
+            "!ring-red-200",
+          );
         }, 7000);
       }
     });
   }
 
-  function describeSaveError(error: unknown): { message: string; fieldId?: string } {
-    const rawMessage = error instanceof Error ? error.message : "";
-
-    if (rawMessage.includes("Missing or insufficient permissions")) {
-      return {
-        fieldId: "homeAddress",
-        message:
-          "Firebase denied the profile save. The Home address field is currently being sent by this form, but the deployed Firestore rules must explicitly allow the homeAddress field. Deploy the updated firestore.rules file. If the error remains afterward, check the signed-in account and the profile's ownerId/createdAt/updatedAt rule conditions.",
-      };
-    }
-
-    return {
-      message: rawMessage || "Something went wrong. Please try again.",
-    };
-  }
-
   function addContact(): void {
     clearMessages();
 
-    if (contacts.length >= MAX_EMERGENCY_CONTACTS) {
-      setError(
-        `You can register up to ${MAX_EMERGENCY_CONTACTS} emergency contacts.`
-      );
+    if (contacts.length >= MAX_CONTACTS) {
+      setError(`You can register up to ${MAX_CONTACTS} emergency contacts.`);
       return;
     }
 
@@ -357,19 +359,16 @@ export default function EmergencyProfilePage() {
   function updateContact(
     id: string,
     field: keyof EmergencyContact,
-    value: string
+    value: string,
   ): void {
     clearMessages();
 
     setContacts((current) =>
       current.map((contact) =>
         contact.id === id
-          ? {
-              ...contact,
-              [field]: value,
-            }
-          : contact
-      )
+          ? { ...contact, [field]: value }
+          : contact,
+      ),
     );
   }
 
@@ -377,15 +376,11 @@ export default function EmergencyProfilePage() {
     clearMessages();
 
     setContacts((current) => {
-      const remaining = current.filter(
-        (contact) => contact.id !== id
-      );
+      const remaining = current.filter((contact) => contact.id !== id);
 
       if (
         remaining.length > 0 &&
-        !remaining.some(
-          (contact) => contact.isPrimary
-        )
+        !remaining.some((contact) => contact.isPrimary)
       ) {
         return remaining.map((contact, index) => ({
           ...contact,
@@ -404,20 +399,23 @@ export default function EmergencyProfilePage() {
       current.map((contact) => ({
         ...contact,
         isPrimary: contact.id === id,
-      }))
+      })),
     );
   }
 
   function updatePrivacy(
     field: keyof EmergencyPrivacy,
-    value: boolean
+    value: boolean,
   ): void {
     clearMessages();
 
     if (field === "showHomeAddress" && value) {
       const confirmed = window.confirm(
-        "Your home address is sensitive information. If enabled, it may be visible to anyone who scans your active Emergency QR. Show it publicly?"
+        "Your home address is sensitive information. " +
+          "If enabled, it may be visible to anyone who scans your active " +
+          "Emergency QR. Do you want to show it publicly?",
       );
+
       if (!confirmed) return;
     }
 
@@ -428,24 +426,25 @@ export default function EmergencyProfilePage() {
   }
 
   async function handlePhotoUpload(
-    event: ChangeEvent<HTMLInputElement>
+    event: ChangeEvent<HTMLInputElement>,
   ): Promise<void> {
     const file = event.target.files?.[0];
+
     event.target.value = "";
 
     if (!file || !user || photoUploading) return;
 
     if (!existingProfile) {
-      setError("Save your emergency profile first, then upload its photo.");
+      setError("Save your emergency profile before uploading a photo.");
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
-      setError("Choose an image file.");
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Choose a JPG, PNG or WebP image.");
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > MAX_PHOTO_SIZE) {
       setError("The profile photo must be 5 MB or smaller.");
       return;
     }
@@ -453,28 +452,42 @@ export default function EmergencyProfilePage() {
     clearMessages();
     setPhotoUploading(true);
 
+    let uploadedPath = "";
+
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const photoRef = storageRef(
-        storage,
-        `emergency-profile-photos/${user.uid}/${Date.now()}-${safeName}`
-      );
+      uploadedPath =
+        `emergency-profile-photos/${user.uid}/` +
+        `${Date.now()}-${safeName}`;
 
-      await uploadBytes(photoRef, file, { contentType: file.type });
+      const photoRef = storageRef(storage, uploadedPath);
+
+      await uploadBytes(photoRef, file, {
+        contentType: file.type,
+      });
+
       const photoUrl = await getDownloadURL(photoRef);
-      const now = new Date().toISOString();
 
       const updatedProfile: EmergencyProfile = {
         ...existingProfile,
         photoUrl,
-        updatedAt: now,
+        updatedAt: new Date().toISOString(),
       };
 
       await saveEmergencyProfile(updatedProfile);
+
       setExistingProfile(updatedProfile);
       setSuccess("Profile photo uploaded and saved successfully.");
-    } catch (err) {
-      setError(getErrorMessage(err));
+    } catch (uploadError) {
+      if (uploadedPath) {
+        try {
+          await deleteObject(storageRef(storage, uploadedPath));
+        } catch {
+          // Keep the original save/upload error visible.
+        }
+      }
+
+      setError(getErrorMessage(uploadError));
     } finally {
       setPhotoUploading(false);
     }
@@ -490,6 +503,7 @@ export default function EmergencyProfilePage() {
 
     try {
       const oldPhotoUrl = existingProfile.photoUrl;
+
       const updatedProfile: EmergencyProfile = {
         ...existingProfile,
         photoUrl: "",
@@ -500,27 +514,26 @@ export default function EmergencyProfilePage() {
       setExistingProfile(updatedProfile);
 
       try {
-        await deleteObject(storageRef(storage, oldPhotoUrl));
+        const oldPhotoRef = storageRef(storage, oldPhotoUrl);
+        await deleteObject(oldPhotoRef);
       } catch {
-        // The profile is already updated; an old storage object can be cleaned up separately.
+        // Profile removal has succeeded; an orphaned object can be cleaned up separately.
       }
 
       setSuccess("Profile photo removed.");
-    } catch (err) {
-      setError(getErrorMessage(err));
+    } catch (removeError) {
+      setError(getErrorMessage(removeError));
     } finally {
       setPhotoUploading(false);
     }
   }
 
   async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
 
-    if (!user || saving) {
-      return;
-    }
+    if (!user || saving) return;
 
     clearMessages();
 
@@ -529,47 +542,52 @@ export default function EmergencyProfilePage() {
       return;
     }
 
-    if (
-      dateOfBirth &&
-      dateOfBirth > getToday()
-    ) {
+    if (dateOfBirth && dateOfBirth > getToday()) {
       reportError(
         "Date of birth cannot be in the future.",
-        "dateOfBirth"
+        "dateOfBirth",
       );
       return;
     }
 
-    if (
-      contacts.length === 0 ||
-      contacts.length > MAX_EMERGENCY_CONTACTS
-    ) {
+    if (emergencyInstructions.length > MAX_INSTRUCTIONS_LENGTH) {
       reportError(
-        `Register between 1 and ${MAX_EMERGENCY_CONTACTS} emergency contacts.`,
-        "addEmergencyContact"
+        `Emergency instructions must be ${MAX_INSTRUCTIONS_LENGTH} characters or fewer.`,
+        "emergencyInstructions",
       );
       return;
     }
 
-    const emailPattern =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (contacts.length === 0 || contacts.length > MAX_CONTACTS) {
+      reportError(
+        `Register between 1 and ${MAX_CONTACTS} emergency contacts.`,
+        "addEmergencyContact",
+      );
+      return;
+    }
 
-    for (const contact of contacts) {
-      if (
-        !contact.name.trim() ||
-        !contact.phone.trim()
-      ) {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    for (let index = 0; index < contacts.length; index += 1) {
+      const contact = contacts[index];
+
+      if (!contact.name.trim()) {
         reportError(
-          "Enter the name and phone number for every emergency contact.",
-          !contact.name.trim()
-            ? `contact-name-${contact.id}`
-            : `contact-phone-${contact.id}`
+          "Enter the name for every emergency contact.",
+          `contact-name-${contact.id}`,
         );
         return;
       }
 
-      const email = (contact.email || "")
-        .trim();
+      if (!contact.phone.trim()) {
+        reportError(
+          "Enter the phone number for every emergency contact.",
+          `contact-phone-${contact.id}`,
+        );
+        return;
+      }
+
+      const email = (contact.email || "").trim();
 
       if (
         !email ||
@@ -577,21 +595,17 @@ export default function EmergencyProfilePage() {
         !emailPattern.test(email)
       ) {
         reportError(
-          `Enter a valid email address for ${contact.name || `Contact ${contacts.indexOf(contact) + 1}`}.`,
-          `contact-email-${contact.id}`
+          `Enter a valid email address for ${contact.name || `Contact ${index + 1}`}.`,
+          `contact-email-${contact.id}`,
         );
         return;
       }
     }
 
-    const primaryContacts = contacts.filter(
-      (contact) => contact.isPrimary
-    );
-
-    if (primaryContacts.length !== 1) {
+    if (contacts.filter((contact) => contact.isPrimary).length !== 1) {
       reportError(
         "Select exactly one primary emergency contact.",
-        "primaryEmergencyContact"
+        "primaryEmergencyContact",
       );
       return;
     }
@@ -599,7 +613,7 @@ export default function EmergencyProfilePage() {
     if (!consentGiven) {
       reportError(
         "Please acknowledge the consent statement.",
-        "consentGiven"
+        "consentGiven",
       );
       return;
     }
@@ -611,41 +625,25 @@ export default function EmergencyProfilePage() {
 
       const profile: EmergencyProfile = {
         ownerId: user.uid,
-
         fullName: fullName.trim(),
         homeAddress: homeAddress.trim(),
-
-        photoUrl:
-          existingProfile?.photoUrl || "",
-
+        photoUrl: existingProfile?.photoUrl || "",
         dateOfBirth,
         bloodGroup,
-
         allergies: textToList(allergies),
-
-        medicalConditions:
-          textToList(medicalConditions),
-
+        medicalConditions: textToList(medicalConditions),
         medications: textToList(medications),
 
-        emergencyContacts: contacts.map(
-          (contact) => ({
-            ...contact,
-            name: contact.name.trim(),
-            relationship:
-              contact.relationship.trim(),
-            phone: contact.phone.trim(),
-            email: (contact.email || "")
-              .trim()
-              .toLowerCase(),
-          })
-        ),
+        emergencyContacts: contacts.map((contact) => ({
+          ...contact,
+          name: contact.name.trim(),
+          relationship: contact.relationship.trim(),
+          phone: contact.phone.trim(),
+          email: (contact.email || "").trim().toLowerCase(),
+        })),
 
-        emergencyInstructions:
-          emergencyInstructions.trim(),
-
+        emergencyInstructions: emergencyInstructions.trim(),
         privacy,
-
         consentGiven: true,
 
         consentUpdatedAt:
@@ -654,64 +652,83 @@ export default function EmergencyProfilePage() {
             ? existingProfile.consentUpdatedAt
             : now,
 
-        createdAt:
-          existingProfile?.createdAt || now,
-
+        createdAt: existingProfile?.createdAt || now,
         updatedAt: now,
       };
 
       await saveEmergencyProfile(profile);
 
       setExistingProfile(profile);
-
-      setSuccess(
-        "Your emergency profile has been saved successfully."
-      );
-    } catch (err) {
-      const details = describeSaveError(err);
+      setSuccess("Your emergency profile has been saved successfully.");
+    } catch (saveError) {
+      const details = describeSaveError(saveError);
       reportError(details.message, details.fieldId);
     } finally {
       setSaving(false);
     }
   }
 
+  if (!user) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+        <section className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-slate-900">
+            Sign in required
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Please sign in to manage your emergency profile.
+          </p>
+          <Link
+            to="/login"
+            className="mt-4 inline-flex rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800"
+          >
+            Sign in
+          </Link>
+        </section>
+      </main>
+    );
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-        <p
-          role="status"
-          className="text-slate-600"
-        >
-          Loading your emergency profile...
+        <p role="status" className="text-sm text-slate-600">
+          Loading your emergency profile…
         </p>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-7xl">
-        <Link
-          to="/dashboard"
-          className="inline-flex items-center text-sm font-semibold text-blue-700 hover:underline"
-        >
-          ← Back to Dashboard
-        </Link>
+    <main className="min-h-screen bg-slate-50 px-4 py-5 sm:px-6">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <Link
+            to="/dashboard"
+            className="text-sm font-semibold text-blue-700 hover:underline"
+          >
+            ← Dashboard
+          </Link>
 
-        <header className="mb-8 mt-6">
-          <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
-            HealthPassport Emergency QR
+          <Link
+            to="/my-qr"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            My Emergency QR →
+          </Link>
+        </div>
+
+        <header className="mb-5">
+          <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
+            SafehealthQR
           </p>
-
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-            My Emergency Profile
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Emergency Profile
           </h1>
-
-          <p className="mt-3 max-w-2xl leading-7 text-slate-600">
-            Keep your essential medical information
-            and emergency contacts up to date so
-            someone can find the information they need
-            when helping you.
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+            Keep your identification, medical information and emergency
+            contacts current. Choose which details can appear on your
+            public Emergency QR page.
           </p>
         </header>
 
@@ -720,22 +737,16 @@ export default function EmergencyProfilePage() {
             ref={successRef}
             tabIndex={-1}
             role="status"
-            className="mb-6 rounded-xl border border-green-200 bg-green-50 p-5 outline-none"
+            className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 outline-none"
           >
-            <h2 className="font-bold text-green-900">
-              Profile saved successfully
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-green-800">
+            <p className="text-sm font-semibold text-green-900">
               {success}
             </p>
-
             <Link
               to="/my-qr"
-              className="mt-4 inline-flex items-center justify-center rounded-lg border border-green-800 bg-green-700 px-5 py-3 font-semibold !text-white shadow-sm transition-colors duration-150 hover:border-green-900 hover:bg-green-800 hover:!text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-green-200 active:bg-green-900"
-              style={{ color: "#ffffff", backgroundColor: "#15803d" }}
+              className="mt-3 inline-flex rounded-lg bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-300"
             >
-              <span style={{ color: "#ffffff" }}>Continue to My QR →</span>
+              Continue to My QR →
             </Link>
           </div>
         )}
@@ -745,684 +756,509 @@ export default function EmergencyProfilePage() {
             ref={errorRef}
             tabIndex={-1}
             role="alert"
-            className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800 outline-none focus:ring-2 focus:ring-red-300"
+            className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800 outline-none focus:ring-2 focus:ring-red-300"
           >
             {error}
           </div>
         )}
 
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-6"
-        >
-          <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
-            <div className="min-w-0 space-y-5">
-          {/* Personal information */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+            <div className="space-y-4">
+              <section className={SECTION_CLASS}>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Personal information
+                </h2>
 
-          <section className={sectionClass}>
-            <h2 className="text-xl font-bold text-slate-900">
-              Personal Information
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Provide the basic information that may
-              help someone identify you during an
-              emergency.
-            </p>
-
-            <div className="mt-6 space-y-5">
-              <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                  {existingProfile?.photoUrl ? (
-                    <img
-                      src={existingProfile.photoUrl}
-                      alt="Emergency profile"
-                      className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-md"
-                    />
-                  ) : (
-                    <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white text-3xl font-bold text-blue-700 shadow-sm">
-                      {fullName.trim().charAt(0).toUpperCase() || "＋"}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-slate-900">Profile photo</h3>
-                    <p className="mt-1 text-sm leading-5 text-slate-600">
-                      Add a clear photo so someone can identify you during an emergency.
-                      JPG, PNG or WebP recommended; maximum 5 MB.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => photoInputRef.current?.click()}
-                        disabled={photoUploading || !user}
-                        className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:opacity-50"
-                      >
-                        {photoUploading ? "Working…" : existingProfile?.photoUrl ? "Change photo" : "Upload photo"}
-                      </button>
-                      {existingProfile?.photoUrl && (
-                        <button
-                          type="button"
-                          onClick={() => void handleRemovePhoto()}
-                          disabled={photoUploading}
-                          className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                        >
-                          Remove photo
-                        </button>
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                    <div className="flex items-center gap-3">
+                      {existingProfile?.photoUrl ? (
+                        <img
+                          src={existingProfile.photoUrl}
+                          alt="Emergency profile"
+                          className="h-16 w-16 shrink-0 rounded-xl border border-white object-cover shadow-sm"
+                        />
+                      ) : (
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-white text-2xl font-bold text-blue-700">
+                          {fullName.trim().charAt(0).toUpperCase() || "＋"}
+                        </div>
                       )}
-                      <input
-                        ref={photoInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif"
-                        onChange={(event) => void handlePhotoUpload(event)}
-                        disabled={photoUploading || !user}
-                        className="sr-only"
-                        aria-label="Upload profile photo"
-                      />
+
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Profile photo
+                        </h3>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">
+                          JPG, PNG or WebP · Maximum 5 MB
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => photoInputRef.current?.click()}
+                            disabled={photoUploading || !existingProfile}
+                            className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {photoUploading
+                              ? "Saving photo…"
+                              : existingProfile?.photoUrl
+                                ? "Change photo"
+                                : "Upload photo"}
+                          </button>
+
+                          {existingProfile?.photoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => void handleRemovePhoto()}
+                              disabled={photoUploading}
+                              className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
+
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(event) => void handlePhotoUpload(event)}
+                      disabled={photoUploading || !existingProfile}
+                      className="sr-only"
+                      aria-label="Upload profile photo"
+                    />
+
                     {!existingProfile && (
                       <p className="mt-2 text-xs text-slate-500">
-                        Save your emergency profile before uploading a photo.
+                        Save your profile before uploading a photo.
                       </p>
                     )}
-                    {photoUploading && (
-                      <p role="status" className="mt-2 text-sm font-medium text-blue-700">
-                        Saving profile photo…
-                      </p>
-                    )}
+
+                    <label className="mt-3 flex items-start gap-2 border-t border-blue-100 pt-3">
+                      <input
+                        type="checkbox"
+                        checked={privacy.showPhoto}
+                        onChange={(event) =>
+                          updatePrivacy("showPhoto", event.target.checked)
+                        }
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                      />
+                      <span className="text-xs leading-5 text-slate-700">
+                        Show my photo on the public Emergency QR page.
+                      </span>
+                    </label>
                   </div>
-                </div>
-                <label className="mt-4 flex items-start gap-3 rounded-xl bg-white/80 p-3">
-                  <input
-                    type="checkbox"
-                    checked={privacy.showPhoto}
-                    onChange={(event) => updatePrivacy("showPhoto", event.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-slate-300"
-                  />
-                  <span className="text-sm text-slate-700">
-                    <span className="block font-semibold">Show my photo on the public Emergency QR page</span>
-                    <span className="mt-1 block text-xs text-slate-500">
-                      Your photo is stored in your profile. It is shown publicly only when this option is enabled.
+
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-800">
+                      Full name *
                     </span>
-                  </span>
-                </label>
-              </div>
-
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-800">
-                  Full name *
-                </span>
-
-                <input
-                  id="fullName"
-                  type="text"
-                  required
-                  maxLength={120}
-                  autoComplete="name"
-                  value={fullName}
-                  onChange={(event) => {
-                    clearMessages();
-                    setFullName(event.target.value);
-                  }}
-                  className={inputClass}
-                  placeholder="Enter your full name"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-800">
-                  Date of birth
-                </span>
-
-                <input
-                  id="dateOfBirth"
-                  type="date"
-                  max={getToday()}
-                  value={dateOfBirth}
-                  onChange={(event) => {
-                    clearMessages();
-                    setDateOfBirth(event.target.value);
-                  }}
-                  className={inputClass}
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-800">
-                  Home address
-                </span>
-                <textarea
-                  id="homeAddress"
-                  rows={3}
-                  maxLength={500}
-                  autoComplete="street-address"
-                  value={homeAddress}
-                  onChange={(event) => {
-                    clearMessages();
-                    setHomeAddress(event.target.value);
-                  }}
-                  className={inputClass}
-                  placeholder="House/flat, street, locality, city, state and PIN code"
-                />
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  Private by default. You can choose whether to show it on your public Emergency QR.
-                </p>
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-800">
-                  Blood group
-                </span>
-
-                <select
-                  value={bloodGroup}
-                  onChange={(event) => {
-                    clearMessages();
-
-                    setBloodGroup(
-                      event.target.value as BloodGroup
-                    );
-                  }}
-                  className={inputClass}
-                >
-                  {BLOOD_GROUPS.map((group) => (
-                    <option
-                      key={group}
-                      value={group}
-                    >
-                      {group}
-                    </option>
-                  ))}
-                </select>
-
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  Select Unknown if your blood group
-                  has not been confirmed.
-                </p>
-              </label>
-            </div>
-          </section>
-
-          
-{/* Medical information */}
-
-          <section className={sectionClass}>
-            <h2 className="text-xl font-bold text-slate-900">
-              Medical Information
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Enter important information that could
-              help a responder understand your medical
-              needs.
-            </p>
-
-            <div className="mt-6 space-y-5">
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-800">
-                  Allergies
-                </span>
-
-                <textarea
-                  rows={3}
-                  value={allergies}
-                  onChange={(event) => {
-                    clearMessages();
-                    setAllergies(event.target.value);
-                  }}
-                  className={inputClass}
-                  placeholder={
-                    "Enter known allergies, one per line"
-                  }
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-800">
-                  Medical conditions
-                </span>
-
-                <textarea
-                  rows={3}
-                  value={medicalConditions}
-                  onChange={(event) => {
-                    clearMessages();
-
-                    setMedicalConditions(
-                      event.target.value
-                    );
-                  }}
-                  className={inputClass}
-                  placeholder={
-                    "Enter relevant medical conditions, one per line"
-                  }
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-800">
-                  Current medications
-                </span>
-
-                <textarea
-                  rows={3}
-                  value={medications}
-                  onChange={(event) => {
-                    clearMessages();
-                    setMedications(event.target.value);
-                  }}
-                  className={inputClass}
-                  placeholder={
-                    "Enter current medications, one per line"
-                  }
-                />
-              </label>
-            </div>
-          </section>
-
-          
-
-
-          
-            </div>
-            <div className="min-w-0 space-y-5">
-{/* Emergency contacts */}
-
-          <section className={sectionClass}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  Emergency Contacts
-                </h2>
-
-                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                  Add trusted people who can be contacted
-                  if an emergency occurs.
-                </p>
-              </div>
-
-              <button
-                id="addEmergencyContact"
-                type="button"
-                onClick={addContact}
-                disabled={
-                  contacts.length >=
-                  MAX_EMERGENCY_CONTACTS
-                }
-                className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                + Add Contact
-              </button>
-            </div>
-
-            <p className="mt-3 text-xs leading-5 text-slate-500">
-              Register 1–10 contacts. Each contact
-              requires a name, phone number, and email
-              address. Email addresses are used for
-              notifications and are not intended for
-              public display.
-            </p>
-
-            {contacts.length === 0 && (
-              <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                <p className="font-medium text-slate-800">
-                  No emergency contacts added
-                </p>
-
-                <p className="mt-2 text-sm text-slate-600">
-                  Add at least one trusted contact.
-                </p>
-
-                <button
-                  type="button"
-                  onClick={addContact}
-                  className="mt-4 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800"
-                >
-                  Add First Contact
-                </button>
-              </div>
-            )}
-
-            <div className="mt-5 space-y-5">
-              {contacts.map((contact, index) => (
-                <article
-                  key={contact.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5"
-                >
-                  <div className="mb-5 flex items-center justify-between gap-3">
-                    <h3 className="font-bold text-slate-900">
-                      Contact {index + 1}
-                    </h3>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        removeContact(contact.id)
-                      }
-                      className="text-sm font-semibold text-red-700 hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="text-sm font-semibold text-slate-800">
-                        Full name *
-                      </span>
-
-                      <input
-                        id={`contact-name-${contact.id}`}
-                        type="text"
-                        required
-                        maxLength={120}
-                        value={contact.name}
-                        onChange={(event) =>
-                          updateContact(
-                            contact.id,
-                            "name",
-                            event.target.value
-                          )
-                        }
-                        className={inputClass}
-                        placeholder="Contact name"
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="text-sm font-semibold text-slate-800">
-                        Relationship
-                      </span>
-
-                      <input
-                        type="text"
-                        maxLength={60}
-                        value={contact.relationship}
-                        onChange={(event) =>
-                          updateContact(
-                            contact.id,
-                            "relationship",
-                            event.target.value
-                          )
-                        }
-                        className={inputClass}
-                        placeholder="e.g. Spouse, Parent"
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="text-sm font-semibold text-slate-800">
-                        Phone number *
-                      </span>
-
-                      <input
-                        id={`contact-phone-${contact.id}`}
-                        type="tel"
-                        required
-                        maxLength={20}
-                        autoComplete="off"
-                        value={contact.phone}
-                        onChange={(event) =>
-                          updateContact(
-                            contact.id,
-                            "phone",
-                            event.target.value
-                          )
-                        }
-                        className={inputClass}
-                        placeholder="+91..."
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="text-sm font-semibold text-slate-800">
-                        Email address *
-                      </span>
-
-                      <input
-                        id={`contact-email-${contact.id}`}
-                        type="email"
-                        required
-                        maxLength={254}
-                        autoComplete="off"
-                        value={contact.email || ""}
-                        onChange={(event) =>
-                          updateContact(
-                            contact.id,
-                            "email",
-                            event.target.value
-                          )
-                        }
-                        className={inputClass}
-                        placeholder="contact@example.com"
-                      />
-                    </label>
-                  </div>
-
-                  <label className="mt-5 flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
                     <input
-                      id="primaryEmergencyContact"
-                      type="radio"
-                      name="primaryEmergencyContact"
-                      checked={contact.isPrimary}
-                      onChange={() =>
-                        setPrimaryContact(contact.id)
-                      }
-                      className="h-4 w-4"
+                      id="fullName"
+                      type="text"
+                      required
+                      maxLength={120}
+                      autoComplete="name"
+                      value={fullName}
+                      onChange={(event) => {
+                        clearMessages();
+                        setFullName(event.target.value);
+                      }}
+                      className={INPUT_CLASS}
+                      placeholder="Enter your full name"
                     />
+                  </label>
 
-                    <span className="text-sm font-medium text-slate-800">
-                      Set as primary emergency contact
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-sm font-semibold text-slate-800">
+                        Date of birth
+                      </span>
+                      <input
+                        id="dateOfBirth"
+                        type="date"
+                        max={getToday()}
+                        value={dateOfBirth}
+                        onChange={(event) => {
+                          clearMessages();
+                          setDateOfBirth(event.target.value);
+                        }}
+                        className={INPUT_CLASS}
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="text-sm font-semibold text-slate-800">
+                        Blood group
+                      </span>
+                      <select
+                        value={bloodGroup}
+                        onChange={(event) => {
+                          clearMessages();
+                          setBloodGroup(event.target.value as BloodGroup);
+                        }}
+                        className={INPUT_CLASS}
+                      >
+                        {BLOOD_GROUPS.map((group) => (
+                          <option key={group} value={group}>
+                            {group}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-800">
+                      Home address
+                    </span>
+                    <textarea
+                      id="homeAddress"
+                      rows={2}
+                      maxLength={500}
+                      autoComplete="street-address"
+                      value={homeAddress}
+                      onChange={(event) => {
+                        clearMessages();
+                        setHomeAddress(event.target.value);
+                      }}
+                      className={INPUT_CLASS}
+                      placeholder="House, street, locality, city, PIN code"
+                    />
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">
+                      Private by default. Public display can be controlled
+                      below.
                     </span>
                   </label>
-                </article>
-              ))}
+                </div>
+              </section>
+
+              <section className={SECTION_CLASS}>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Medical information
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Enter one item per line. Leave a field blank if it does
+                  not apply.
+                </p>
+
+                <div className="mt-3 space-y-3">
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-800">
+                      Allergies
+                    </span>
+                    <textarea
+                      rows={2}
+                      value={allergies}
+                      onChange={(event) => {
+                        clearMessages();
+                        setAllergies(event.target.value);
+                      }}
+                      className={INPUT_CLASS}
+                      placeholder="e.g. peanut allergy"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-800">
+                      Medical conditions
+                    </span>
+                    <textarea
+                      rows={2}
+                      value={medicalConditions}
+                      onChange={(event) => {
+                        clearMessages();
+                        setMedicalConditions(event.target.value);
+                      }}
+                      className={INPUT_CLASS}
+                      placeholder="e.g. asthma, diabetes"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-800">
+                      Current medications
+                    </span>
+                    <textarea
+                      rows={2}
+                      value={medications}
+                      onChange={(event) => {
+                        clearMessages();
+                        setMedications(event.target.value);
+                      }}
+                      className={INPUT_CLASS}
+                      placeholder="Medication name and dosage"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-800">
+                      Emergency instructions
+                    </span>
+                    <textarea
+                      id="emergencyInstructions"
+                      rows={3}
+                      maxLength={MAX_INSTRUCTIONS_LENGTH}
+                      value={emergencyInstructions}
+                      onChange={(event) => {
+                        clearMessages();
+                        setEmergencyInstructions(event.target.value);
+                      }}
+                      className={INPUT_CLASS}
+                      placeholder="Important instructions for a responder"
+                    />
+                    <span className="mt-1 block text-right text-xs text-slate-500">
+                      {emergencyInstructions.length}/{MAX_INSTRUCTIONS_LENGTH}
+                    </span>
+                  </label>
+                </div>
+              </section>
             </div>
-          </section>
 
-          
-{/* Emergency instructions */}
+            <div className="space-y-4">
+              <section className={SECTION_CLASS}>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Emergency contacts
+                    </h2>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      Add at least one contact. Each contact needs a phone
+                      number and email address.
+                    </p>
+                  </div>
 
-          <section className="rounded-2xl border-2 border-blue-200 bg-white p-5 shadow-sm sm:p-7">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                  Emergency Instructions
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                    {contacts.length}/{MAX_CONTACTS}
+                  </span>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {contacts.map((contact, index) => (
+                    <fieldset
+                      key={contact.id}
+                      className="rounded-xl border border-slate-200 p-3"
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <legend className="text-sm font-bold text-slate-800">
+                          Contact {index + 1}
+                        </legend>
+
+                        <button
+                          type="button"
+                          onClick={() => removeContact(contact.id)}
+                          className="rounded-md px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="block">
+                          <span className="text-xs font-semibold text-slate-700">
+                            Full name *
+                          </span>
+                          <input
+                            id={`contact-name-${contact.id}`}
+                            type="text"
+                            maxLength={120}
+                            value={contact.name}
+                            onChange={(event) =>
+                              updateContact(
+                                contact.id,
+                                "name",
+                                event.target.value,
+                              )
+                            }
+                            className={INPUT_CLASS}
+                            placeholder="Contact name"
+                          />
+                        </label>
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="text-xs font-semibold text-slate-700">
+                              Relationship
+                            </span>
+                            <input
+                              type="text"
+                              maxLength={80}
+                              value={contact.relationship}
+                              onChange={(event) =>
+                                updateContact(
+                                  contact.id,
+                                  "relationship",
+                                  event.target.value,
+                                )
+                              }
+                              className={INPUT_CLASS}
+                              placeholder="e.g. Spouse"
+                            />
+                          </label>
+
+                          <label className="block">
+                            <span className="text-xs font-semibold text-slate-700">
+                              Phone number *
+                            </span>
+                            <input
+                              id={`contact-phone-${contact.id}`}
+                              type="tel"
+                              maxLength={30}
+                              autoComplete="tel"
+                              value={contact.phone}
+                              onChange={(event) =>
+                                updateContact(
+                                  contact.id,
+                                  "phone",
+                                  event.target.value,
+                                )
+                              }
+                              className={INPUT_CLASS}
+                              placeholder="Phone number"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="block">
+                          <span className="text-xs font-semibold text-slate-700">
+                            Email address *
+                          </span>
+                          <input
+                            id={`contact-email-${contact.id}`}
+                            type="email"
+                            maxLength={254}
+                            autoComplete="email"
+                            value={contact.email || ""}
+                            onChange={(event) =>
+                              updateContact(
+                                contact.id,
+                                "email",
+                                event.target.value,
+                              )
+                            }
+                            className={INPUT_CLASS}
+                            placeholder="contact@example.com"
+                          />
+                        </label>
+
+                        <label className="flex items-start gap-2 border-t border-slate-100 pt-3">
+                          <input
+                            id={
+                              contact.isPrimary
+                                ? "primaryEmergencyContact"
+                                : undefined
+                            }
+                            type="radio"
+                            name="primaryEmergencyContact"
+                            checked={contact.isPrimary}
+                            onChange={() => setPrimaryContact(contact.id)}
+                            className="mt-0.5 h-4 w-4"
+                          />
+                          <span className="text-xs font-medium text-slate-700">
+                            Set as primary emergency contact
+                          </span>
+                        </label>
+                      </div>
+                    </fieldset>
+                  ))}
+
+                  {contacts.length === 0 && (
+                    <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+                      Add at least one emergency contact before saving.
+                    </p>
+                  )}
+
+                  <button
+                    id="addEmergencyContact"
+                    type="button"
+                    onClick={addContact}
+                    disabled={contacts.length >= MAX_CONTACTS}
+                    className="w-full rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    + Add emergency contact
+                  </button>
+                </div>
+              </section>
+
+              <section className={SECTION_CLASS}>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Public QR privacy
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Your Emergency QR may be scanned by anyone. Enable only
+                  the details you are comfortable displaying publicly.
+                </p>
+
+                <div className="mt-3 divide-y divide-slate-100">
+                  {PRIVACY_OPTIONS.map((option) => (
+                    <label
+                      key={option.key}
+                      className="flex items-start justify-between gap-3 py-3"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-slate-800">
+                          {option.label}
+                        </span>
+                        <span className="mt-0.5 block text-xs leading-5 text-slate-500">
+                          {option.description}
+                        </span>
+                      </span>
+
+                      <input
+                        type="checkbox"
+                        checked={Boolean(privacy[option.key])}
+                        onChange={(event) =>
+                          updatePrivacy(option.key, event.target.checked)
+                        }
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className={SECTION_CLASS}>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Consent and saving
                 </h2>
 
-                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                  Tell a person helping you what they
-                  should know or do during an emergency.
+                <label
+                  id="consentGiven"
+                  className="mt-3 flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+                >
+                  <input
+                    type="checkbox"
+                    checked={consentGiven}
+                    onChange={(event) => {
+                      clearMessages();
+                      setConsentGiven(event.target.checked);
+                    }}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
+                  />
+
+                  <span className="text-sm leading-6 text-slate-700">
+                    I confirm that the information provided is accurate
+                    to the best of my knowledge. I understand that the
+                    details enabled above may be visible to people who
+                    scan my active Emergency QR.
+                  </span>
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={saving || photoUploading}
+                  className="mt-4 w-full rounded-lg bg-blue-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? "Saving profile…" : "Save Emergency Profile"}
+                </button>
+
+                <p className="mt-2 text-center text-xs leading-5 text-slate-500">
+                  Save your profile before using it with your Emergency QR.
                 </p>
-              </div>
-
-              <span className="rounded-full bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800">
-                Important
-              </span>
+              </section>
             </div>
-
-            <label
-              htmlFor="emergencyInstructions"
-              className="mt-6 block text-base font-semibold text-slate-900"
-            >
-              What should someone know to help you?
-            </label>
-
-            <textarea
-              id="emergencyInstructions"
-              name="emergencyInstructions"
-              rows={10}
-              maxLength={MAX_INSTRUCTION_LENGTH}
-              value={emergencyInstructions}
-              onChange={(event) => {
-                clearMessages();
-
-                setEmergencyInstructions(
-                  event.target.value
-                );
-              }}
-              placeholder={
-                "Example:\n\n" +
-                "If I am unconscious or unable to " +
-                "communicate, please call emergency " +
-                "medical services immediately.\n\n" +
-                "Important precautions:\n" +
-                "Known medical risks:\n" +
-                "Other instructions for the responder:"
-              }
-              aria-describedby="emergency-instructions-help emergency-instructions-count"
-              className={"mt-3 block min-h-[280px] w-full " +
-                "resize-y rounded-xl border-2 " +
-                "border-slate-300 bg-white p-5 " +
-                "text-base leading-7 text-slate-900 " +
-                "placeholder:text-slate-400 " +
-                "focus:border-blue-600 focus:outline-none " +
-                "focus:ring-4 focus:ring-blue-100 " +
-                "sm:min-h-[320px] sm:p-6 sm:text-lg"
-              }
-            />
-
-            <div
-              id="emergency-instructions-help"
-              className="mt-4 rounded-xl bg-blue-50 p-4 sm:p-5"
-            >
-              <h3 className="font-bold text-blue-950">
-                Tips for writing clear instructions
-              </h3>
-
-              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-blue-950">
-                <li>
-                  Explain what someone should do if
-                  you cannot communicate.
-                </li>
-
-                <li>
-                  Mention important precautions and
-                  relevant medical information.
-                </li>
-
-                <li>
-                  Keep your instructions clear,
-                  accurate, and easy to understand.
-                </li>
-
-                <li>
-                  Do not include passwords, banking
-                  information, or other unnecessary
-                  sensitive details.
-                </li>
-              </ul>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs leading-5 text-slate-500">
-                Your instructions are saved with your
-                emergency profile.
-              </p>
-
-              <p
-                id="emergency-instructions-count"
-                aria-live="polite"
-                className={
-                  "text-sm font-semibold " +
-                  (emergencyInstructions.length >=
-                  MAX_INSTRUCTION_LENGTH
-                    ? "text-amber-700"
-                    : "text-slate-600")
-                }
-              >
-                {emergencyInstructions.length}/
-                {MAX_INSTRUCTION_LENGTH} characters
-              </p>
-            </div>
-          </section>
-
-          
-            </div>
-          </div>
-        <section className={sectionClass}>
-          <h2 className="text-xl font-bold text-slate-900">
-            Public QR Privacy
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Choose which information may be shown to someone who scans your active emergency QR.
-          </p>
-          <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {PRIVACY_OPTIONS.map(({ key, label }) => (
-              <label key={key} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50">
-                <input
-                  type="checkbox"
-                  checked={privacy[key]}
-                  onChange={(event) => updatePrivacy(key, event.target.checked)}
-                  className="h-4 w-4 shrink-0"
-                />
-                <span className="text-sm leading-5 text-slate-800">{label}</span>
-              </label>
-            ))}
-          </div>
-          <p className="mt-4 text-xs leading-5 text-slate-500">
-            Home address is private by default. Emergency contact email addresses are never shown publicly.
-          </p>
-        </section>
-
-{/* Consent */}
-
-          <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 sm:p-7">
-            <h2 className="text-xl font-bold text-blue-950">
-              Consent and Acknowledgement
-            </h2>
-
-            <label className="mt-5 flex cursor-pointer items-start gap-3">
-              <input
-                id="consentGiven"
-                type="checkbox"
-                checked={consentGiven}
-                onChange={(event) => {
-                  clearMessages();
-
-                  setConsentGiven(
-                    event.target.checked
-                  );
-                }}
-                className="mt-1 h-4 w-4"
-              />
-
-              <span className="text-sm leading-6 text-blue-950">
-                I confirm that the information I
-                provide is accurate to the best of my
-                knowledge. I consent to its storage in
-                my HealthPassport Emergency QR profile.
-                I have permission from my emergency
-                contacts to register their details and
-                receive emergency notifications. I
-                understand that the information selected
-                through my privacy settings may be
-                displayed on my public emergency QR.
-              </span>
-            </label>
-          </section>
-
-          
-{/* Save actions */}
-
-          <div className="space-y-4 pb-10">
-            <button
-              type="submit"
-              disabled={saving || !user}
-              className="w-full rounded-xl bg-blue-700 px-6 py-4 text-base font-bold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving
-                ? "Saving Emergency Profile..."
-                : existingProfile
-                  ? "Update Emergency Profile"
-                  : "Save Emergency Profile"}
-            </button>
-
-            <Link
-              to="/dashboard"
-              className="block text-center text-sm font-semibold text-slate-600 hover:text-slate-900"
-            >
-              Cancel and Return to Dashboard
-            </Link>
           </div>
         </form>
       </div>

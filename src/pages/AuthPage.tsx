@@ -1,11 +1,10 @@
-﻿import {
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+﻿// src/pages/AuthPage.tsx
+
+import { useState, type FormEvent, type ReactNode } from "react";
 import { FirebaseError } from "firebase/app";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import BrandLogo from "../components/BrandLogo";
 
 type AuthMode = "login" | "register" | "reset";
 
@@ -71,14 +70,14 @@ function authErrorMessage(error: unknown): string {
 }
 
 const inputClass =
-  "mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 " +
-  "bg-white px-3 py-2.5 text-sm text-slate-900 outline-none " +
+  "mt-1 w-full min-h-10 rounded-lg border border-slate-300 " +
+  "bg-white px-3 py-2 text-sm text-slate-900 outline-none " +
   "transition placeholder:text-slate-400 focus:border-blue-600 " +
   "focus:ring-2 focus:ring-blue-100";
 
 const buttonClass =
-  "inline-flex min-h-11 w-full items-center justify-center rounded-lg " +
-  "bg-[#185abc] px-4 py-2.5 text-sm font-bold text-white " +
+  "inline-flex min-h-10 w-full items-center justify-center rounded-lg " +
+  "bg-[#185abc] px-4 py-2 text-sm font-bold text-white " +
   "transition hover:bg-[#124a9e] focus-visible:outline-none " +
   "focus-visible:ring-2 focus-visible:ring-blue-500 " +
   "focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
@@ -114,12 +113,7 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const {
-    register,
-    login,
-    loginWithGoogle,
-    resetPassword,
-  } = useAuth();
+  const { register, login, loginWithGoogle, resetPassword } = useAuth();
 
   const initialMode: AuthMode =
     location.pathname === "/register" ? "register" : "login";
@@ -133,13 +127,9 @@ export default function AuthPage() {
   const [mobileNumber, setMobileNumber] = useState("");
 
   const [referralCode, setReferralCode] = useState(() =>
-    readReferralCode(location.search)
+    readReferralCode(location.search),
   );
 
-  /*
-   * Track the previous query string so referral links opened after
-   * the page loads can update the referral field without useEffect.
-   */
   const [previousSearch, setPreviousSearch] = useState(location.search);
 
   if (location.search !== previousSearch) {
@@ -195,10 +185,7 @@ export default function AuthPage() {
         return;
       }
 
-      if (
-        firstName.trim().length > 60 ||
-        lastName.trim().length > 60
-      ) {
+      if (firstName.trim().length > 60 || lastName.trim().length > 60) {
         setError("Each name must be 60 characters or fewer.");
         return;
       }
@@ -212,14 +199,14 @@ export default function AuthPage() {
 
       if (digits.length < 6 || digits.length > 14) {
         setError(
-          "Enter a valid mobile number with the selected country code."
+          "Enter a valid mobile number with the selected country code.",
         );
         return;
       }
 
       if (!passwordValid) {
         setError(
-          "Meet all password requirements before creating your account."
+          "Meet all password requirements before creating your account.",
         );
         return;
       }
@@ -234,7 +221,7 @@ export default function AuthPage() {
         !/^[A-Z0-9]{8}$/.test(referralCode.trim().toUpperCase())
       ) {
         setError(
-          "Referral codes must contain exactly 8 letters or numbers."
+          "Referral codes must contain exactly 8 letters or numbers.",
         );
         return;
       }
@@ -263,7 +250,7 @@ export default function AuthPage() {
         await resetPassword(email.trim().toLowerCase());
 
         setMessage(
-          "If an account exists for this email, a password reset link has been sent."
+          "If an account exists for this email, a password reset link has been sent.",
         );
       }
     } catch (err) {
@@ -303,69 +290,118 @@ export default function AuthPage() {
       : "Sign in to manage your emergency information.";
 
   return (
-    <main className="flex min-h-screen flex-col bg-[#f7f9fd]">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#143d75] text-lg font-extrabold text-white">
-              H
-            </span>
-
-            <span>
-              <span className="block text-sm font-extrabold tracking-tight text-[#142d50]">
-                HealthPassport
-              </span>
-              <span className="block text-[11px] text-slate-500">
-                Emergency QR
-              </span>
-            </span>
-          </Link>
+    <main className="flex min-h-screen flex-col bg-[#f4f7fb] text-[#142d50]">
+      {/* Compact header */}
+      <header className="shrink-0 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex min-h-[68px] w-full max-w-[1440px] items-center justify-between gap-4 px-5 py-1 sm:px-8 lg:px-12">
+          <BrandLogo
+            to="/"
+            showTagline={false}
+            imageClassName="w-[100px] sm:w-[112px]"
+          />
 
           <Link
             to="/"
-            className="rounded-md px-2 py-2 text-sm font-semibold text-[#185abc] hover:bg-blue-50"
+            className="inline-flex min-h-9 items-center rounded-lg px-3 text-sm font-semibold text-[#185abc] transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             Home
           </Link>
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-5 px-4 py-5 sm:px-6 sm:py-7 lg:grid-cols-[1fr_460px] lg:gap-10">
-        <section className="hidden lg:block">
-          <span className="inline-flex rounded-full bg-blue-50 px-3 py-1.5 text-xs font-bold text-[#185abc]">
-            HealthPassport Emergency QR
-          </span>
+      {/* Main content uses the available desktop width */}
+      <div className="mx-auto grid w-full max-w-[1440px] flex-1 content-center items-center gap-8 px-5 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_440px] lg:gap-12 lg:px-12 xl:grid-cols-[minmax(0,1fr)_460px] xl:gap-16">
+        {/* Introduction */}
+        <section className="hidden min-w-0 lg:block">
+          <div className="max-w-2xl">
+            <span className="inline-flex rounded-full border border-blue-100 bg-white px-3 py-1.5 text-xs font-bold text-[#185abc]">
+              SafehealthQR Emergency QR
+            </span>
 
-          <h1 className="mt-4 max-w-md text-4xl font-extrabold leading-tight tracking-tight text-[#142d50]">
-            Emergency information, ready when needed.
-          </h1>
+            <h1 className="mt-4 max-w-2xl text-4xl font-extrabold leading-[1.12] tracking-tight text-[#142d50] xl:text-5xl">
+              Emergency information.
+              <br />
+              Ready when needed.
+            </h1>
 
-          <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
-            Maintain essential emergency information through your personal
-            QR and control which details are shared publicly.
-          </p>
+            <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
+              Keep essential medical and emergency details accessible through
+              your personal QR. You decide which information is shared publicly.
+            </p>
 
-          <ul className="mt-5 space-y-3">
-            {[
-              "Create and maintain your emergency profile",
-              "Manage your personal Emergency QR",
-              "Choose which information is publicly visible",
-            ].map((item) => (
-              <li
-                key={item}
-                className="flex items-start gap-2.5 text-sm text-[#183657]"
+            <div className="mt-6 grid max-w-2xl grid-cols-1 gap-3 xl:grid-cols-3">
+              {[
+                {
+                  number: "01",
+                  title: "Your emergency profile",
+                  description: "Maintain essential personal and medical details.",
+                },
+                {
+                  number: "02",
+                  title: "Your personal QR",
+                  description: "Manage your QR and prepare it for printing.",
+                },
+                {
+                  number: "03",
+                  title: "Your privacy",
+                  description: "Control which information others can view.",
+                },
+              ].map((item) => (
+                <div
+                  key={item.number}
+                  className="rounded-xl border border-slate-200 bg-white p-4"
+                >
+                  <span className="text-xs font-extrabold tracking-wider text-[#185abc]">
+                    {item.number}
+                  </span>
+
+                  <h3 className="mt-2 text-sm font-bold text-[#183657]">
+                    {item.title}
+                  </h3>
+
+                  <p className="mt-1.5 text-xs leading-5 text-slate-500">
+                    {item.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/70 p-4">
+              <span
+                aria-hidden="true"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-[#185abc]"
               >
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-50 text-xs font-bold text-green-700">
-                  ✓
-                </span>
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+                ✓
+              </span>
+
+              <div>
+                <p className="text-sm font-bold text-[#183657]">
+                  Keep your information up to date
+                </p>
+
+                <p className="mt-1 text-sm leading-5 text-slate-600">
+                  Review your medical details, emergency contacts, and public
+                  sharing preferences regularly.
+                </p>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <section className="mx-auto w-full max-w-[460px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#185abc]">
+        {/* Authentication card */}
+        <section className="mx-auto w-full max-w-[460px] rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_30px_rgba(15,42,80,0.07)] sm:p-6">
+          {/* Mobile branding context */}
+          <div className="mb-4 lg:hidden">
+            <p className="text-xs font-bold text-[#185abc]">
+              SafehealthQR Emergency QR
+            </p>
+
+            <p className="mt-1 text-sm leading-5 text-slate-600">
+              Emergency information, ready when needed.
+            </p>
+          </div>
+
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#185abc]">
             {isRegister
               ? "Get started"
               : mode === "reset"
@@ -377,13 +413,14 @@ export default function AuthPage() {
             {heading}
           </h2>
 
-          <p className="mt-1.5 text-sm leading-5 text-slate-600">
+          <p className="mt-1 text-sm leading-5 text-slate-600">
             {description}
           </p>
 
-          <form onSubmit={handleSubmit} className="mt-5 space-y-3.5">
+          <form onSubmit={handleSubmit} className="mt-5 space-y-3">
             {isRegister && (
               <>
+                {/* Name */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label
@@ -428,6 +465,7 @@ export default function AuthPage() {
                   </div>
                 </div>
 
+                {/* Mobile number */}
                 <div>
                   <label
                     htmlFor="mobileNumber"
@@ -436,12 +474,12 @@ export default function AuthPage() {
                     Mobile number
                   </label>
 
-                  <div className="mt-1.5 grid grid-cols-[minmax(120px,0.85fr)_minmax(0,1.4fr)] gap-2">
+                  <div className="mt-1 grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)] gap-2">
                     <select
                       aria-label="Mobile country code"
                       value={countryCode}
                       onChange={(event) => setCountryCode(event.target.value)}
-                      className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      className="min-h-10 min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
                     >
                       {countries.map((country) => (
                         <option
@@ -467,13 +505,14 @@ export default function AuthPage() {
                     />
                   </div>
 
-                  <p className="mt-1.5 text-xs leading-5 text-slate-500">
+                  <p className="mt-1 text-xs leading-4 text-slate-500">
                     Enter the number without the country code. Mobile
                     verification is separate and is not completed by
                     registration alone.
                   </p>
                 </div>
 
+                {/* Referral code */}
                 <div>
                   <label
                     htmlFor="referralCode"
@@ -498,25 +537,25 @@ export default function AuthPage() {
                         event.target.value
                           .toUpperCase()
                           .replace(/[^A-Z0-9]/g, "")
-                          .slice(0, 8)
+                          .slice(0, 8),
                       );
                     }}
-                    placeholder="Enter 8-character referral code"
+                    placeholder="8-character referral code"
                     aria-describedby="referralHelp"
                     className={inputClass}
                   />
 
                   <p
                     id="referralHelp"
-                    className="mt-1.5 text-xs leading-5 text-slate-500"
+                    className="mt-1 text-xs leading-4 text-slate-500"
                   >
-                    Have a referral code? Enter it here. Codes from referral
-                    links are filled in automatically.
+                    Referral links automatically fill in the code.
                   </p>
                 </div>
               </>
             )}
 
+            {/* Email */}
             <div>
               <label
                 htmlFor="email"
@@ -538,6 +577,7 @@ export default function AuthPage() {
               />
             </div>
 
+            {/* Password */}
             {mode !== "reset" && (
               <div>
                 <label
@@ -575,30 +615,36 @@ export default function AuthPage() {
                 </div>
 
                 {isRegister && (
-                  <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                  <div className="mt-2 rounded-lg bg-slate-50 p-3">
                     <p className="mb-2 text-xs font-bold text-[#183657]">
                       Password requirements
                     </p>
 
-                    <ul className="space-y-1.5 text-xs">
+                    <ul className="grid grid-cols-1 gap-y-1.5 text-xs sm:grid-cols-2">
                       <PasswordRequirement valid={passwordRequirements.length}>
                         8–128 characters
                       </PasswordRequirement>
 
-                      <PasswordRequirement valid={passwordRequirements.uppercase}>
-                        At least one uppercase letter (A–Z)
+                      <PasswordRequirement
+                        valid={passwordRequirements.uppercase}
+                      >
+                        Uppercase letter (A–Z)
                       </PasswordRequirement>
 
-                      <PasswordRequirement valid={passwordRequirements.lowercase}>
-                        At least one lowercase letter (a–z)
+                      <PasswordRequirement
+                        valid={passwordRequirements.lowercase}
+                      >
+                        Lowercase letter (a–z)
                       </PasswordRequirement>
 
                       <PasswordRequirement valid={passwordRequirements.number}>
-                        At least one number (0–9)
+                        Number (0–9)
                       </PasswordRequirement>
 
-                      <PasswordRequirement valid={passwordRequirements.special}>
-                        At least one special character (such as @, #, ! or %)
+                      <PasswordRequirement
+                        valid={passwordRequirements.special}
+                      >
+                        Special character (@, #, !)
                       </PasswordRequirement>
                     </ul>
                   </div>
@@ -606,6 +652,7 @@ export default function AuthPage() {
               </div>
             )}
 
+            {/* Confirm password */}
             {isRegister && (
               <div>
                 <label
@@ -635,9 +682,7 @@ export default function AuthPage() {
 
                   <button
                     type="button"
-                    onClick={() =>
-                      setShowConfirmPassword((value) => !value)
-                    }
+                    onClick={() => setShowConfirmPassword((value) => !value)}
                     className="absolute inset-y-0 right-3 my-auto h-8 text-xs font-semibold text-[#185abc]"
                     aria-label={
                       showConfirmPassword
@@ -651,7 +696,7 @@ export default function AuthPage() {
 
                 {confirmPassword.length > 0 && (
                   <p
-                    className={`mt-1.5 text-xs ${
+                    className={`mt-1 text-xs ${
                       passwordsMatch ? "text-green-700" : "text-red-600"
                     }`}
                     role="status"
@@ -664,10 +709,11 @@ export default function AuthPage() {
               </div>
             )}
 
+            {/* Status messages */}
             {error && (
               <p
                 role="alert"
-                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800"
+                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
               >
                 {error}
               </p>
@@ -676,12 +722,13 @@ export default function AuthPage() {
             {message && (
               <p
                 role="status"
-                className="rounded-lg border border-green-200 bg-green-50 px-3 py-2.5 text-sm text-green-800"
+                className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
               >
                 {message}
               </p>
             )}
 
+            {/* Submit */}
             <button
               type="submit"
               disabled={
@@ -705,13 +752,16 @@ export default function AuthPage() {
             </button>
           </form>
 
+          {/* Google sign-in */}
           {mode !== "reset" && (
             <>
-              <div className="my-4 flex items-center gap-3">
+              <div className="my-3 flex items-center gap-3">
                 <span className="h-px flex-1 bg-slate-200" />
+
                 <span className="text-[11px] font-medium text-slate-400">
                   OR
                 </span>
+
                 <span className="h-px flex-1 bg-slate-200" />
               </div>
 
@@ -719,17 +769,22 @@ export default function AuthPage() {
                 type="button"
                 disabled={busy}
                 onClick={handleGoogleLogin}
-                className="flex min-h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-[#183657] hover:bg-slate-50 disabled:opacity-50"
+                className="flex min-h-10 w-full items-center justify-center gap-2.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-[#183657] transition hover:bg-slate-50 disabled:opacity-50"
               >
-                <span className="text-base font-extrabold text-[#4285f4]">
+                <span
+                  aria-hidden="true"
+                  className="text-base font-extrabold text-[#4285f4]"
+                >
                   G
                 </span>
+
                 Continue with Google
               </button>
             </>
           )}
 
-          <div className="mt-5 space-y-3 text-center text-sm">
+          {/* Account links */}
+          <div className="mt-4 space-y-2 text-center text-sm">
             {mode === "login" && (
               <>
                 <button
@@ -781,9 +836,9 @@ export default function AuthPage() {
             )}
           </div>
 
-          <p className="mt-5 border-t border-slate-100 pt-4 text-center text-xs leading-5 text-slate-500">
-            Manage the emergency information associated with your account
-            and review your public-sharing settings regularly.
+          <p className="mt-4 border-t border-slate-100 pt-3 text-center text-xs leading-5 text-slate-500">
+            Manage your emergency information and review your public-sharing
+            settings regularly.
           </p>
         </section>
       </div>

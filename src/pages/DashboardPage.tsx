@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { httpsCallable } from "firebase/functions";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import BrandLogo from "../components/BrandLogo";
 import { functions } from "../lib/firebase";
 
 type ReferralSummary = {
@@ -102,29 +103,6 @@ function Icon({
   );
 }
 
-function Brand() {
-  return (
-    <Link
-      to="/"
-      aria-label="HealthPassport homepage"
-      className="flex min-w-0 items-center gap-2.5"
-    >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#143d75] text-lg font-extrabold text-white">
-        H
-      </span>
-
-      <span className="min-w-0">
-        <span className="block text-sm font-extrabold tracking-tight text-[#142d50]">
-          HealthPassport
-        </span>
-        <span className="block text-[11px] text-slate-500">
-          Emergency QR
-        </span>
-      </span>
-    </Link>
-  );
-}
-
 function SectionIcon({
   name,
 }: {
@@ -151,7 +129,7 @@ export default function DashboardPage() {
   const displayName =
     user?.displayName?.trim() ||
     user?.email?.split("@")[0] ||
-    "HealthPassport User";
+    "SafehealthQR User";
 
   const loadReferralSummary = useCallback(async () => {
     // Defer state updates until after the effect's synchronous execution.
@@ -164,6 +142,7 @@ export default function DashboardPage() {
       return;
     }
 
+    setReferralLoading(true);
     setReferralLoadFailed(false);
 
     try {
@@ -180,14 +159,14 @@ export default function DashboardPage() {
   }, [user?.emailVerified]);
 
   useEffect(() => {
-  const timer = window.setTimeout(() => {
-    void loadReferralSummary();
-  }, 0);
+    const timer = window.setTimeout(() => {
+      void loadReferralSummary();
+    }, 0);
 
-  return () => {
-    window.clearTimeout(timer);
-  };
-}, [loadReferralSummary]);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loadReferralSummary]);
 
   async function handleSignOut() {
     if (signingOut) return;
@@ -211,6 +190,8 @@ export default function DashboardPage() {
   async function copyReferralCode() {
     if (!referral?.code) return;
 
+    setCopyMessage("");
+
     try {
       await navigator.clipboard.writeText(referral.code);
       setCopyMessage("Referral code copied.");
@@ -232,16 +213,13 @@ export default function DashboardPage() {
     if (!referral?.code) return;
 
     const referralLink = getReferralLink(referral.code);
+    setCopyMessage("");
 
     try {
       await navigator.clipboard.writeText(referralLink);
-      setCopyMessage(
-        "Referral link copied. You can paste it into any app.",
-      );
+      setCopyMessage("Referral link copied. You can paste it into any app.");
     } catch {
-      setCopyMessage(
-        `Copy this referral link manually: ${referralLink}`,
-      );
+      setCopyMessage(`Copy this referral link manually: ${referralLink}`);
     }
   }
 
@@ -249,20 +227,19 @@ export default function DashboardPage() {
     if (!referral?.code) return;
 
     const referralLink = getReferralLink(referral.code);
-    const shareText =
-      `Join HealthPassport Emergency QR using my referral code: ${referral.code}`;
+    const shareText = `Join SafehealthQR using my referral code: ${referral.code}`;
+
+    setCopyMessage("");
 
     try {
       if (typeof navigator.share === "function") {
         await navigator.share({
-          title: "HealthPassport Emergency QR",
+          title: "SafehealthQR",
           text: shareText,
           url: referralLink,
         });
       } else {
-        await navigator.clipboard.writeText(
-          `${shareText}\n${referralLink}`,
-        );
+        await navigator.clipboard.writeText(`${shareText}\n${referralLink}`);
         setCopyMessage("Referral message and link copied.");
       }
     } catch (err) {
@@ -270,9 +247,7 @@ export default function DashboardPage() {
       if (err instanceof Error && err.name === "AbortError") return;
 
       try {
-        await navigator.clipboard.writeText(
-          `${shareText}\n${referralLink}`,
-        );
+        await navigator.clipboard.writeText(`${shareText}\n${referralLink}`);
         setCopyMessage(
           "Sharing isn't available here. Referral link copied instead.",
         );
@@ -285,10 +260,10 @@ export default function DashboardPage() {
   }
 
   const cardClass =
-    "rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5";
+    "min-w-0 rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4";
 
   const linkClass =
-    "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg !bg-[#185abc] px-4 py-2 text-sm font-semibold !text-white shadow-sm transition hover:!bg-[#124a9e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
+    "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg !bg-[#185abc] px-4 py-2 text-sm font-semibold !text-white shadow-sm transition hover:!bg-[#124a9e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
 
   const secondaryLinkClass =
     "inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#185abc] transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
@@ -296,8 +271,13 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#f7f9fd] text-[#142d50]">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Brand />
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-5">
+          <BrandLogo
+  to="/"
+  compact
+  showTagline={false}
+  imageClassName="!w-[125px] sm:!w-[145px]"
+/>
 
           <nav
             aria-label="Dashboard navigation"
@@ -313,23 +293,23 @@ export default function DashboardPage() {
 
             <Link
               to="/profile"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             >
               Profile
             </Link>
 
             <Link
               to="/my-qr"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             >
               My QR
             </Link>
 
             <button
               type="button"
-              onClick={handleSignOut}
+              onClick={() => void handleSignOut()}
               disabled={signingOut}
-              className="min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {signingOut ? "Signing out…" : "Sign out"}
             </button>
@@ -337,18 +317,18 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-7">
+      <main className="mx-auto max-w-6xl px-4 py-4 sm:px-5 sm:py-5">
         {error && (
           <div
             role="alert"
-            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800"
+            className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
           >
             {error}
           </div>
         )}
 
-        <section className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div>
+        <section className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wider text-[#185abc]">
               Emergency dashboard
             </p>
@@ -357,48 +337,44 @@ export default function DashboardPage() {
               Welcome, {displayName}
             </h1>
 
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+            <p className="mt-1 max-w-2xl text-sm leading-5 text-slate-600">
               Manage your emergency profile and personal QR from one place.
             </p>
           </div>
 
-          <Link to="/my-qr" className={linkClass}>
+          <Link to="/my-qr" className={`${linkClass} shrink-0 self-start`}>
             <Icon name="qr" size={18} />
             Open My QR
           </Link>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-2">
           <section className={cardClass}>
             <div className="flex items-center gap-3">
               <SectionIcon name="user" />
 
-              <div>
-                <h2 className="text-base font-bold">
-                  Account information
-                </h2>
+              <div className="min-w-0">
+                <h2 className="text-base font-bold">Account information</h2>
                 <p className="text-xs text-slate-500">
                   Your registered account details
                 </p>
               </div>
             </div>
 
-            <dl className="mt-4 divide-y divide-slate-100">
-              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2.5 text-sm">
+            <dl className="mt-3 divide-y divide-slate-100">
+              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2 text-sm">
                 <dt className="text-slate-500">Full name</dt>
-                <dd className="break-words font-semibold">
-                  {displayName}
-                </dd>
+                <dd className="break-words font-semibold">{displayName}</dd>
               </div>
 
-              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2.5 text-sm">
+              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2 text-sm">
                 <dt className="text-slate-500">Email</dt>
                 <dd className="break-all font-medium">
                   {user?.email || "Not available"}
                 </dd>
               </div>
 
-              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2.5 text-sm">
+              <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-3 py-2 text-sm">
                 <dt className="text-slate-500">Email status</dt>
                 <dd>
                   <span
@@ -416,7 +392,7 @@ export default function DashboardPage() {
               </div>
             </dl>
 
-            <div className="mt-3 border-t border-slate-100 pt-3">
+            <div className="mt-2 border-t border-slate-100 pt-2">
               <Link to="/profile" className={secondaryLinkClass}>
                 Manage emergency profile
                 <Icon name="arrow" size={16} />
@@ -428,7 +404,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-3">
               <SectionIcon name="qr" />
 
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-base font-bold">My Emergency QR</h2>
                 <p className="text-xs text-slate-500">
                   Your personal emergency identifier
@@ -436,13 +412,13 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <p className="mt-3 text-sm leading-6 text-slate-600">
+            <p className="mt-3 text-sm leading-5 text-slate-600">
               Manage your QR and the emergency information made available to
               someone who scans it. Review your profile before sharing your QR.
             </p>
 
-            <div className="mt-3 flex items-start gap-2 rounded-lg bg-blue-50 p-3">
-              <span className="mt-0.5 text-[#185abc]">
+            <div className="mt-2 flex items-start gap-2 rounded-lg bg-blue-50 p-3">
+              <span className="mt-0.5 shrink-0 text-[#185abc]">
                 <Icon name="shield" size={18} />
               </span>
 
@@ -461,11 +437,11 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        <section className="mt-5">
-          <div className="mb-3">
+        <section className="mt-4">
+          <div className="mb-2">
             <h2 className="text-lg font-bold">Referral programme</h2>
             <p className="mt-0.5 text-sm text-slate-500">
-              Invite people to join HealthPassport Emergency QR with your code.
+              Invite people to join SafehealthQR with your code.
             </p>
           </div>
 
@@ -475,12 +451,15 @@ export default function DashboardPage() {
                 Verify your email to access your referral code.
               </p>
             ) : referralLoading ? (
-              <p className="text-sm text-slate-500">
+              <p
+                role="status"
+                className="py-1 text-sm text-slate-500"
+              >
                 Loading your referral details…
               </p>
             ) : referral ? (
               <div className="grid gap-4 sm:grid-cols-2">
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-600">
                     Your referral code
                   </p>
@@ -501,7 +480,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       onClick={() => void copyReferralLink()}
-                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     >
                       <Icon name="link" size={17} />
                       Copy link
@@ -510,7 +489,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       onClick={() => void shareReferralCode()}
-                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     >
                       <Icon name="share" size={17} />
                       Share
@@ -518,23 +497,26 @@ export default function DashboardPage() {
                   </div>
 
                   {copyMessage && (
-                    <p role="status" className="mt-2 text-sm text-slate-600">
+                    <p
+                      role="status"
+                      className="mt-2 break-words text-sm text-slate-600"
+                    >
                       {copyMessage}
                     </p>
                   )}
                 </div>
 
-                <div className="rounded-xl bg-blue-50 p-4">
+                <div className="rounded-xl bg-blue-50 p-3.5 sm:p-4">
                   <p className="text-sm font-semibold text-slate-600">
                     Verified referrals
                   </p>
 
-                  <p className="mt-2 text-4xl font-extrabold text-[#185abc]">
+                  <p className="mt-1 text-4xl font-extrabold text-[#185abc]">
                     {referral.verifiedReferrals}
                   </p>
 
                   {referral.verifiedReferrals === 0 ? (
-                    <div className="mt-3 rounded-lg border border-blue-100 bg-white p-3">
+                    <div className="mt-2 rounded-lg border border-blue-100 bg-white p-3">
                       <p className="text-sm font-semibold text-[#142d50]">
                         Your referral journey starts here!
                       </p>
@@ -542,8 +524,8 @@ export default function DashboardPage() {
                       <p className="mt-1 text-sm leading-5 text-slate-600">
                         You haven't referred anyone yet. Share your referral
                         code with friends and family to invite them to
-                        HealthPassport Emergency QR. Your verified referrals
-                        will appear here once they join successfully.
+                        SafehealthQR. Your verified referrals will appear here
+                        once they join successfully.
                       </p>
                     </div>
                   ) : (
@@ -563,10 +545,7 @@ export default function DashboardPage() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setReferralLoading(true);
-                    void loadReferralSummary();
-                  }}
+                  onClick={() => void loadReferralSummary()}
                   className={`${linkClass} mt-3`}
                 >
                   Try again
@@ -580,8 +559,8 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="mt-5">
-          <div className="mb-3">
+        <section className="mt-4">
+          <div className="mb-2">
             <h2 className="text-lg font-bold">Quick access</h2>
             <p className="mt-0.5 text-sm text-slate-500">
               Go directly to the task you need.
@@ -598,11 +577,11 @@ export default function DashboardPage() {
                 <h3 className="text-sm font-bold">Emergency profile</h3>
               </div>
 
-              <p className="mt-3 text-sm leading-5 text-slate-600">
+              <p className="mt-2 text-sm leading-5 text-slate-600">
                 Update medical details, emergency contacts and sharing settings.
               </p>
 
-              <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#185abc]">
+              <span className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-[#185abc]">
                 Edit profile <Icon name="arrow" size={15} />
               </span>
             </Link>
@@ -616,11 +595,11 @@ export default function DashboardPage() {
                 <h3 className="text-sm font-bold">My Emergency QR</h3>
               </div>
 
-              <p className="mt-3 text-sm leading-5 text-slate-600">
+              <p className="mt-2 text-sm leading-5 text-slate-600">
                 Create, test, download or deactivate your personal QR.
               </p>
 
-              <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#185abc]">
+              <span className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-[#185abc]">
                 Open QR <Icon name="arrow" size={15} />
               </span>
             </Link>
@@ -631,27 +610,25 @@ export default function DashboardPage() {
                 <h3 className="text-sm font-bold">Family Emergency QRs</h3>
               </div>
 
-              <p className="mt-3 text-sm leading-5 text-slate-600">
+              <p className="mt-2 text-sm leading-5 text-slate-600">
                 Family and dependant QR management is not yet available in this
                 release.
               </p>
 
-              <span className="mt-3 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+              <span className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
                 Planned feature
               </span>
             </div>
           </div>
         </section>
 
-        <section className="mt-5 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
-          <span className="mt-0.5 text-[#185abc]">
+        <section className="mt-4 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3.5 sm:p-4">
+          <span className="mt-0.5 shrink-0 text-[#185abc]">
             <Icon name="shield" size={20} />
           </span>
 
           <div>
-            <h2 className="text-sm font-bold">
-              Your information, your choice
-            </h2>
+            <h2 className="text-sm font-bold">Your information, your choice</h2>
 
             <p className="mt-1 text-xs leading-5 text-slate-600">
               Keep emergency information accurate and share only what is
@@ -662,9 +639,9 @@ export default function DashboardPage() {
         </section>
       </main>
 
-      <footer className="border-t border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <span>HealthPassport Emergency QR</span>
+      <footer className="mt-2 border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <span>SafehealthQR</span>
           <span>
             Emergency information does not replace professional medical care.
           </span>

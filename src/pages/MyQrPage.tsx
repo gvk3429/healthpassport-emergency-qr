@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { Link } from "react-router-dom";
+import BrandLogo from "../components/BrandLogo";
 import { QRCodeCanvas } from "qrcode.react";
 
 import { useAuth } from "../auth/AuthContext";
@@ -684,7 +685,7 @@ export default function MyQrPage() {
         document.createElement("a");
 
       anchor.download =
-        "healthpassport-emergency-qr.png";
+        "safehealthqr-emergency-qr.png";
 
       anchor.href =
         exportCanvas.toDataURL("image/png");
@@ -833,21 +834,24 @@ export default function MyQrPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8">
-      <div className="mx-auto max-w-7xl">
-        <Link
+    <main className="min-h-screen bg-slate-50 px-3 py-3 sm:px-5 sm:py-4">
+      <div className="mx-auto max-w-[1440px]">
+        <div className="mb-2 flex min-h-12 items-center justify-between gap-3">
+          <BrandLogo to="/" showTagline={false} imageClassName="h-20 w-20 object-contain sm:h-24 sm:w-24" />
+          <Link
           to="/dashboard"
-          className="text-sm font-semibold text-blue-700"
+          className="shrink-0 text-sm font-semibold text-blue-700 hover:text-blue-900"
         >
-          ← Back to Dashboard
-        </Link>
+            ← Dashboard
+          </Link>
+        </div>
 
-        <header className="mb-8 mt-6">
-          <h1 className="text-3xl font-bold text-slate-900">
+        <header className="mb-3 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900 sm:text-[1.7rem]">
             My Emergency QR
           </h1>
 
-          <p className="mt-2 text-slate-600">
+          <p className="mt-1 text-sm text-slate-600">
             Manage your emergency QR, customise its design
             and prepare it for printing.
           </p>
@@ -856,7 +860,7 @@ export default function MyQrPage() {
         {error && (
           <div
             role="alert"
-            className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"
+            className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
           >
             {error}
           </div>
@@ -865,7 +869,7 @@ export default function MyQrPage() {
         {message && (
           <div
             role="status"
-            className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-green-800"
+            className="mb-3 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800"
           >
             {message}
           </div>
@@ -890,13 +894,13 @@ export default function MyQrPage() {
           </section>
         ) : (
           <>
-            <div className="grid items-stretch gap-5 lg:grid-cols-2">
-              <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="grid items-start gap-3 xl:grid-cols-[1fr_1fr]">
+              <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-xl font-bold text-slate-900">
                   Emergency profile
                 </h2>
 
-                <div className="mt-5 flex items-center gap-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50 p-4">
+                <div className="mt-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50 p-3">
                   {profile.photoUrl ? (
                     <img
                       src={profile.photoUrl}
@@ -904,18 +908,18 @@ export default function MyQrPage() {
                       loading="eager"
                       referrerPolicy="no-referrer"
                       onError={(event) => { event.currentTarget.style.display = "none"; }}
-                      className="h-20 w-20 shrink-0 rounded-2xl border-2 border-white object-cover shadow-sm"
+                      className="h-16 w-16 shrink-0 rounded-xl border-2 border-white object-cover shadow-sm"
                     />
                   ) : (
-                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-3xl font-bold text-blue-800">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-2xl font-bold text-blue-800">
                       {profile.fullName.trim().charAt(0).toUpperCase() || "?"}
                     </div>
                   )}
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
-                      HealthPassport Emergency QR
+                      SafehealthQR Emergency QR
                     </p>
-                    <h3 className="mt-1 break-words text-xl font-bold text-slate-900">
+                    <h3 className="mt-0.5 break-words text-lg font-bold text-slate-900">
                       {profile.fullName}
                     </h3>
                     <p className="mt-1 text-sm text-slate-600">
@@ -924,47 +928,47 @@ export default function MyQrPage() {
                   </div>
                 </div>
 
-                <dl className="mt-4 grid grid-cols-2 gap-2.5">
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <dl className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-slate-200 bg-white p-2.5">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Date of birth</dt>
                     <dd className="mt-1 break-words text-sm font-semibold text-slate-900">{profile.dateOfBirth || "Not provided"}</dd>
                   </div>
-                  <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3">
+                  <div className="rounded-lg border border-rose-100 bg-rose-50/70 p-2.5">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Blood group</dt>
                     <dd className="mt-1 text-sm font-bold text-rose-900">{profile.bloodGroup || "Unknown"}</dd>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Emergency contacts</dt>
                     <dd className="mt-1 text-sm font-semibold text-slate-900">{profile.emergencyContacts.length} registered</dd>
                     {profile.emergencyContacts.find((contact) => contact.isPrimary) && (
                       <p className="mt-1 truncate text-xs text-slate-600">Primary: {profile.emergencyContacts.find((contact) => contact.isPrimary)?.name}</p>
                     )}
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Profile consent</dt>
                     <dd className={profile.consentGiven ? "mt-1 text-sm font-bold text-emerald-700" : "mt-1 text-sm font-bold text-red-700"}>
                       {profile.consentGiven ? "Granted" : "Not granted"}
                     </dd>
                   </div>
                   {profile.homeAddress?.trim() && (
-                    <div className="col-span-2 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3">
+                    <div className="col-span-2 rounded-lg border border-indigo-100 bg-indigo-50/70 p-2.5">
                       <dt className="text-[11px] font-semibold uppercase tracking-wide text-indigo-800">Home address · private summary</dt>
                       <dd className="mt-1 text-sm leading-5 text-slate-800">{profile.homeAddress}</dd>
                     </div>
                   )}
-                  <div className="rounded-xl border border-amber-100 bg-amber-50/70 p-3">
+                  <div className="rounded-lg border border-amber-100 bg-amber-50/70 p-2.5">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">Allergies</dt>
                     <dd className="mt-1 text-sm leading-5 text-slate-800">{profile.allergies.length ? profile.allergies.join(", ") : "None recorded"}</dd>
                   </div>
-                  <div className="rounded-xl border border-orange-100 bg-orange-50/70 p-3">
+                  <div className="rounded-lg border border-orange-100 bg-orange-50/70 p-2.5">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-orange-800">Medical conditions</dt>
                     <dd className="mt-1 text-sm leading-5 text-slate-800">{profile.medicalConditions.length ? profile.medicalConditions.join(", ") : "None recorded"}</dd>
                   </div>
-                  <div className="rounded-xl border border-teal-100 bg-teal-50/70 p-3">
+                  <div className="rounded-lg border border-teal-100 bg-teal-50/70 p-2.5">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-teal-800">Current medications</dt>
                     <dd className="mt-1 text-sm leading-5 text-slate-800">{profile.medications.length ? profile.medications.join(", ") : "None recorded"}</dd>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                     <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Emergency instructions</dt>
                     <dd className="mt-1 line-clamp-3 text-sm leading-5 text-slate-800">{profile.emergencyInstructions?.trim() || "No special instructions added"}</dd>
                   </div>
@@ -972,13 +976,13 @@ export default function MyQrPage() {
 
                 <Link
                   to="/profile"
-                  className="mt-4 inline-flex self-start rounded-lg border border-blue-700 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
+                  className="mt-3 inline-flex self-start rounded-lg border border-blue-700 px-3.5 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
                 >
                   Edit Emergency Profile
                 </Link>
               </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <h2 className="text-xl font-bold">
                   Personal QR
                 </h2>
@@ -1026,7 +1030,7 @@ export default function MyQrPage() {
                         size={240}
                         level="H"
                         marginSize={4}
-                        title="HealthPassport Emergency QR"
+                        title="SafehealthQR Emergency QR"
                       />
                     </div>
 
@@ -1119,11 +1123,11 @@ export default function MyQrPage() {
             </div>
 
             {qr && (
-              <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.07)]">
-                <div className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-blue-950 to-indigo-950 px-6 py-7 text-white sm:px-8">
+              <section className="mt-5 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.07)]">
+                <div className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-blue-950 to-indigo-950 px-4 py-3.5 text-white sm:px-5">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">HealthPassport · Personal safety</p>
+                      <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">SafehealthQR · Personal safety</p>
                       <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Emergency QR Design &amp; Print</h2>
                       <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
                         Create a clear, attractive emergency card. Choose a style, select a message and check the print preview before downloading.
@@ -1142,21 +1146,21 @@ export default function MyQrPage() {
                   </div>
                 )}
 
-                <div className="grid items-start gap-6 p-5 sm:p-7 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
-                  <div className="min-w-0 space-y-6">
-                    <section className="rounded-2xl border border-slate-200 p-5">
-                      <div className="mb-4 flex items-center gap-3">
+                <div className="grid items-start gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
+                  <div className="min-w-0 space-y-3">
+                    <section className="rounded-2xl border border-slate-200 p-4">
+                      <div className="mb-3 flex items-center gap-3">
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-700 text-sm font-bold text-white">1</span>
                         <div>
                           <h3 className="text-base font-bold text-slate-900">Choose your card style</h3>
-                          <p className="mt-0.5 text-sm text-slate-500">Five polished designs. Select one to preview it.</p>
+                          <p className="mt-0.5 text-sm text-slate-500">Five simple, polished styles. Select one to preview.</p>
                         </div>
                       </div>
 
                       <div
                         role="group"
                         aria-label="Choose QR card design"
-                        className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
+                        className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2"
                       >
                         {(["pulse", "neo", "classic", "executive", "family-care"] as TemplateId[]).map((id) => {
                           const item = getTemplate(id);
@@ -1233,15 +1237,15 @@ export default function MyQrPage() {
                       </div>
                     </section>
 
-                    <section className="rounded-2xl border border-slate-200 p-5">
-                      <div className="mb-4 flex items-center gap-3">
+                    <section className="rounded-2xl border border-slate-200 p-4">
+                      <div className="mb-3 flex items-center gap-3">
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-700 text-sm font-bold text-white">2</span>
                         <div>
                           <h3 className="text-base font-bold text-slate-900">Emergency message</h3>
                           <p className="mt-0.5 text-sm text-slate-500">Use the recommended message or write your own.</p>
                         </div>
                       </div>
-                      <div className="space-y-3">
+                      <div className="space-y-2.5">
                         <div>
                           <label htmlFor="hp-message-preset" className="mb-1.5 block text-sm font-semibold text-slate-700">Select a message</label>
                           <select
@@ -1284,7 +1288,7 @@ export default function MyQrPage() {
                           </span>
                         </label>
                         {messageMode === "custom" && (
-                          <div className="grid gap-4 border-t border-slate-100 pt-4">
+                          <div className="grid gap-3 border-t border-slate-100 pt-3">
                             <div>
                               <label htmlFor="hp-custom-headline" className="mb-1.5 block text-sm font-semibold text-slate-700">Emergency headline</label>
                               <input className="w-full rounded-xl border-slate-300 px-3 py-2.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" id="hp-custom-headline" value={headline} maxLength={MAX_HEADLINE_LENGTH} onChange={(event) => setHeadline(event.target.value)} aria-describedby="hp-headline-count" />
@@ -1302,15 +1306,15 @@ export default function MyQrPage() {
                       </div>
                     </section>
 
-                    <section className="rounded-2xl border border-slate-200 p-5">
-                      <div className="mb-4 flex items-center gap-3">
+                    <section className="rounded-2xl border border-slate-200 p-4">
+                      <div className="mb-3 flex items-center gap-3">
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-700 text-sm font-bold text-white">3</span>
                         <div>
                           <h3 className="text-base font-bold text-slate-900">Print settings</h3>
                           <p className="mt-0.5 text-sm text-slate-500">Choose the physical card size and orientation.</p>
                         </div>
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                           <label htmlFor="hp-print-size" className="mb-1.5 block text-sm font-semibold text-slate-700">Card format</label>
                           <select id="hp-print-size" className="w-full rounded-xl border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" value={sizeId} onChange={(event) => setSizeId(event.target.value as PrintSizeId)}>
@@ -1330,7 +1334,7 @@ export default function MyQrPage() {
 
                   <aside className="min-w-0 xl:sticky xl:top-5">
                     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
-                      <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+                      <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
                         <div>
                           <h3 className="text-base font-bold text-slate-900">Live print preview</h3>
                           <p className="mt-1 text-xs text-slate-500">Actual proportions · {cardWidth} × {cardHeight} mm</p>
@@ -1367,7 +1371,7 @@ export default function MyQrPage() {
 
                           <div className={"hp-print-footer min-w-0 " + (orientation === "landscape" ? "col-span-2 row-start-2 border-t pt-1.5" : "w-full border-t pt-1.5")} style={{ borderColor: `${template.accent}55` }}>
                             <p className="text-[10px] font-semibold leading-tight">Scan to access emergency information</p>
-                            <p className="hp-print-brand mt-1 text-[9px] font-extrabold uppercase tracking-[0.12em]" style={{ color: template.accent }}>Powered by HealthPassport</p>
+                            <p className="hp-print-brand mt-1 text-[9px] font-extrabold uppercase tracking-[0.12em]" style={{ color: template.accent }}>Powered by SafehealthQR</p>
                           </div>
                         </div>
                       </div>
@@ -1378,7 +1382,7 @@ export default function MyQrPage() {
                         </p>
                       )}
 
-                      <div className="grid gap-3 p-5 sm:grid-cols-2">
+                      <div className="grid gap-2.5 p-4 sm:grid-cols-2">
                         <button type="button" onClick={handlePrint} disabled={!canPrint} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
                           Print / Save as PDF
                         </button>
@@ -1386,7 +1390,7 @@ export default function MyQrPage() {
                           Download QR PNG
                         </button>
                       </div>
-                      <p className="px-5 pb-5 text-xs leading-5 text-slate-500">For the cleanest PDF, select “Save as PDF” in the print dialog and disable browser headers and footers. Print at 100% scale where possible.</p>
+                      <p className="px-4 pb-3 text-xs leading-5 text-slate-500">For the cleanest PDF, select “Save as PDF” in the print dialog and disable browser headers and footers. Print at 100% scale where possible.</p>
                     </section>
 
                     <div className="mt-3 grid grid-cols-2 gap-2" aria-label="Printing guidance">
