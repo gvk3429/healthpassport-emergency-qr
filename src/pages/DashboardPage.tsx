@@ -272,12 +272,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[#f7f9fd] text-[#142d50]">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-5">
-          <BrandLogo
-  to="/"
-  compact
-  showTagline={false}
-  imageClassName="!w-[125px] sm:!w-[145px]"
-/>
+         <BrandLogo to="/" compact showTagline={false} />
 
           <nav
             aria-label="Dashboard navigation"

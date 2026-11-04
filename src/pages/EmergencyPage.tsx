@@ -429,8 +429,7 @@ export default function EmergencyPage() {
           </div>
 
           <h1 className="text-2xl font-bold text-slate-900">
-            HealthPassport Emergency QR
-          </h1>
+SafehealthQR Emergency QR          </h1>
 
           <p className="mt-2 text-sm text-slate-600">
             Emergency identification
@@ -790,15 +789,14 @@ export default function EmergencyPage() {
         <section className="mt-6 rounded-xl border bg-white p-5 text-center">
           <p className="text-sm text-slate-600">
             Protect your emergency information
-            with your own HealthPassport QR.
+with your own SafehealthQR.
           </p>
 
           <Link
             to="/"
             className="mt-3 inline-flex rounded-lg border border-blue-700 px-5 py-3 font-semibold text-blue-700"
           >
-            Get HealthPassport
-          </Link>
+Get SafehealthQR          </Link>
         </section>
       </div>
     </main>

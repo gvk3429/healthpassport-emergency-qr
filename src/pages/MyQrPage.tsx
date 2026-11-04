@@ -837,14 +837,15 @@ export default function MyQrPage() {
     <main className="min-h-screen bg-slate-50 px-3 py-3 sm:px-5 sm:py-4">
       <div className="mx-auto max-w-[1440px]">
         <div className="mb-2 flex min-h-12 items-center justify-between gap-3">
-          <BrandLogo to="/" showTagline={false} imageClassName="h-20 w-20 object-contain sm:h-24 sm:w-24" />
-          <Link
-          to="/dashboard"
-          className="shrink-0 text-sm font-semibold text-blue-700 hover:text-blue-900"
-        >
-            ← Dashboard
-          </Link>
-        </div>
+  <BrandLogo to="/" compact showTagline={false} />
+
+  <Link
+    to="/dashboard"
+    className="inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-blue-700"
+  >
+    ← Dashboard
+  </Link>
+</div>
 
         <header className="mb-3 mt-1">
           <h1 className="text-2xl font-bold text-slate-900 sm:text-[1.7rem]">

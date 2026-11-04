@@ -172,11 +172,7 @@ export default function VerifyEmailPage() {
       {/* Compact branded header */}
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
-          <BrandLogo
-            to="/"
-            showTagline={false}
-            imageClassName="w-[145px] sm:w-[175px]"
-          />
+          <BrandLogo to="/" showTagline={false} />
 
           <button
             type="button"

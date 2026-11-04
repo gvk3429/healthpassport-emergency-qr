@@ -70,11 +70,7 @@ export default function HomePage() {
       {/* Header */}
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <BrandLogo
-            to="/"
-            showTagline={false}
-            imageClassName="w-[145px] sm:w-[175px]"
-          />
+          <BrandLogo to="/" showTagline={false} />
 
           <nav
             className="flex shrink-0 items-center gap-2 sm:gap-3"

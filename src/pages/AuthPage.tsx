@@ -294,11 +294,7 @@ export default function AuthPage() {
       {/* Compact header */}
       <header className="shrink-0 border-b border-slate-200 bg-white">
         <div className="mx-auto flex min-h-[68px] w-full max-w-[1440px] items-center justify-between gap-4 px-5 py-1 sm:px-8 lg:px-12">
-          <BrandLogo
-            to="/"
-            showTagline={false}
-            imageClassName="w-[100px] sm:w-[112px]"
-          />
+          <BrandLogo to="/" showTagline={false} />
 
           <Link
             to="/"
